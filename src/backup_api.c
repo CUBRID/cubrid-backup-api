@@ -1,0 +1,234 @@
+#include "backup_api.h"
+#include "backup_core.h"
+#include "backup_manager.h"
+#include "handle_manager.h"
+
+int cubrid_backup_initialize (void)
+{
+    int state = 0;
+
+    if (IS_FAILURE (pthread_once (&backup_api_once_initialize, initialize_backup_api)))
+    {
+        goto error;
+    }
+
+    state = 1;
+
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_INITIALIZE)))
+    {
+        goto error;
+    }
+
+    state = 2;
+
+    if (IS_FAILURE (start_backup_manager ()))
+    {
+        goto error;
+    }
+
+    state = 3;
+
+    if (IS_FAILURE (start_handle_manager ()))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (transit_backup_api_state (BACKUP_API_STATE_INITIALIZING, BACKUP_API_STATE_READY)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    switch (state)
+    {
+        case 3:
+            stop_handle_manager ();
+        case 2:
+            stop_backup_manager ();
+        case 1:
+            pthread_once (&backup_api_once_finalize, finalize_backup_api);
+        default:
+            break;
+    }
+
+    return FAILURE;
+}
+
+int cubrid_backup_finalize (void)
+{
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_FINALIZE)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (stop_handle_manager ()))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (stop_backup_manager ()))
+    {
+        goto error;
+    }
+
+    pthread_once (&backup_api_once_finalize, finalize_backup_api);
+
+    return SUCCESS;
+
+error:
+
+    pthread_once (&backup_api_once_finalize, finalize_backup_api);
+
+    return FAILURE;
+}
+
+int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle)
+{
+    int state = 0;
+
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_BACKUP_BEGIN)))
+    {
+        goto error;
+    }
+
+    state = 1;
+
+    if (IS_FAILURE (begin_backup (backup_info, backup_handle)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    switch (state)
+    {
+        case 1:
+            transit_backup_api_state (BACKUP_API_STATE_BACKUP_SERVICE, BACKUP_API_STATE_READY);
+        default:
+            break;
+    }
+
+    return FAILURE;
+}
+
+int cubrid_backup_end (void* backup_handle)
+{
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_BACKUP_END)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (end_backup (backup_handle)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (transit_backup_api_state (BACKUP_API_STATE_BACKUP_SERVICE, BACKUP_API_STATE_READY)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    return FAILURE;
+}
+
+int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len)
+{
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_BACKUP_READ)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (read_backup_data (backup_handle, buffer, buffer_size, data_len)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    return FAILURE;
+}
+
+int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_handle)
+{
+    int state = 0;
+
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_RESTORE_BEGIN)))
+    {
+        goto error;
+    }
+
+    state = 1;
+
+    if (IS_FAILURE (begin_restore (restore_info, restore_handle)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    switch (state)
+    {
+        case 1:
+            transit_backup_api_state (BACKUP_API_STATE_RESTORE_SERVICE, BACKUP_API_STATE_READY);
+        default:
+            break;
+    }
+
+    return FAILURE;
+}
+
+int cubrid_restore_end (void* restore_handle)
+{
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_RESTORE_END)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (end_restore (restore_handle)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (transit_backup_api_state (BACKUP_API_STATE_RESTORE_SERVICE, BACKUP_API_STATE_READY)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    return FAILURE;
+}
+
+int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, unsigned int data_len)
+{
+    if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_RESTORE_WRITE)))
+    {
+        goto error;
+    }
+
+    if (IS_FAILURE (write_backup_data (restore_handle, backup_level, buffer, data_len)))
+    {
+        goto error;
+    }
+
+    return SUCCESS;
+
+error:
+
+    return FAILURE;
+}
