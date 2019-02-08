@@ -9,6 +9,13 @@
 #include <dlfcn.h>
 #include "backup_common.h"
 
+#define ERR_INFO "in %s () at %s:%d\n", __func__, __FILE__, __LINE__
+
+#define PRINT_LOG_INFO(...) \
+    print_log ("INFO:", __VA_ARGS__)
+#define PRINT_LOG_ERR(...) \
+    print_log ("ERROR:", __VA_ARGS__)
+
 typedef struct backup_option BACKUP_OPTION;
 struct backup_option
 {
@@ -39,7 +46,7 @@ struct backup_manager
     BACKUP_OPTION default_backup_option;
     RESTORE_OPTION default_restore_option;
 
-    int log_fd;
+    FILE* log_fp;
 };
 
 extern BACKUP_MANAGER* backup_mgr;
@@ -49,4 +56,5 @@ int stop_backup_manager (void);
 int validate_dir (const char*);
 int check_path_length_limit (const char*);
 
+int print_log (const char *prefix_str, const char *msg, ...);
 #endif

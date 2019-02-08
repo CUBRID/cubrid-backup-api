@@ -3,7 +3,7 @@
 
 #include <pthread.h>
 #include <signal.h>
-#include "backup_common.h"
+#include "backup_manager.h"
 
 /* The maximum length of database name is 17 in English. */
 #define MAX_DB_NAME_LEN 17
