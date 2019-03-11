@@ -41,13 +41,13 @@ int main (int argc, char *argv[])
 
     if (-1 == cubrid_backup_initialize ())
     {
-        printf ("failed the execution of cubrid_backup_initialize ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_initialize ()\n");
         exit (1);
     }
 
     if (-1 == cubrid_backup_begin (&cub_backup_info, &cub_backup_handle))
     {
-        printf ("failed the execution of cubrid_backup_begin ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_begin ()\n");
         exit (1);
     }
 
@@ -55,7 +55,7 @@ int main (int argc, char *argv[])
     {
         if (-1 == cubrid_backup_read (cub_backup_handle, backup_data_buffer, 4096, &backup_data_size))
         {
-            printf ("failed the execution of cubrid_backup_read ()\n");
+            printf ("[NOK] failed the execution of cubrid_backup_read ()\n");
             exit (1);
         }
 
@@ -71,19 +71,26 @@ int main (int argc, char *argv[])
         }
     }
 
-    printf ("[OK] backup_data_size ==> %d\n", total_backup_data_size);
+    if ( 0 == total_backup_data_size )
+    { 
+        printf ("[NOK] backup_data_size ==> %d\n", total_backup_data_size);
+    }
+    else
+    {
+        printf ("[OK] backup_data_size ==> %d\n", total_backup_data_size);
+    }
 
     fclose (backup_fp);
 
     if (-1 == cubrid_backup_end (cub_backup_handle))
     {
-        printf ("failed the execution of cubrid_backup_end ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_end ()\n");
         exit (1);
     }
 
     if (-1 == cubrid_backup_finalize ())
     {
-        printf ("failed the execution of cubrid_backup_finalize ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_finalize ()\n");
         exit (1);
     }
 

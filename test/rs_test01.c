@@ -46,16 +46,21 @@ int main (int argc, char *argv[])
     set_restore_info (&cub_restore_info, argv[1], argv[2], argv[4], argv[5]);
 
     backup_fp = fopen (argv[3], "r");
+    if (backup_fp == NULL)
+    {
+        printf ("[NOK] failed to open backup file\n");
+        exit (1);
+    }
 
     if (-1 == cubrid_backup_initialize ())
     {
-        printf ("failed the execution of cubrid_backup_initialize ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_initialize ()\n");
         exit (1);
     }
 
     if (-1 == cubrid_restore_begin (&cub_restore_info, &cub_restore_handle))
     {
-        printf ("failed the execution of cubrid_restore_begin ()\n");
+        printf ("[NOK] failed the execution of cubrid_restore_begin ()\n");
         exit (1);
     }
 
@@ -67,7 +72,7 @@ int main (int argc, char *argv[])
         {
             if (-1 == cubrid_restore_write (cub_restore_handle, cub_restore_info.backup_level, restore_data_buffer, restore_data_size))
             {
-                printf ("failed the execution of cubrid_restore_write ()\n");
+                printf ("[NOK] failed the execution of cubrid_restore_write ()\n");
                 exit (1);
             }
 
@@ -79,19 +84,26 @@ int main (int argc, char *argv[])
         }
     }
 
-    printf ("[OK] restore_data_size ==> %d\n", total_restore_data_size);
+    if ( 0 == total_restore_data_size )
+    {
+        printf ("[NOK] restore_data_size ==> %d\n", total_restore_data_size);
+    }
+    else
+    {
+        printf ("[OK] restore_data_size ==> %d\n", total_restore_data_size);
+    }
 
     fclose (backup_fp);
 
     if (-1 == cubrid_restore_end (cub_restore_handle))
     {
-        printf ("failed the execution of cubrid_restore_end ()\n");
+        printf ("[NOK] failed the execution of cubrid_restore_end ()\n");
         exit (1);
     }
 
     if (-1 == cubrid_backup_finalize ())
     {
-        printf ("failed the execution of cubrid_backup_finalize ()\n");
+        printf ("[NOK] failed the execution of cubrid_backup_finalize ()\n");
         exit (1);
     }
 

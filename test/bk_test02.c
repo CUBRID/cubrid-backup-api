@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "cubrid_backup_api.h"
 
 CUBRID_BACKUP_INFO cub_backup_info;
@@ -203,9 +204,9 @@ int main (int argc, char *argv[])
 
     /* test - API call again: MUST error */
     call_cubrid_backup_initialize_x_2 ();
-
+    
     call_cubrid_backup_begin_x_2 ();
-
+    sleep(1);
     call_cubrid_backup_end_x_2 ();
 
     call_cubrid_backup_finalize_x_2 ();

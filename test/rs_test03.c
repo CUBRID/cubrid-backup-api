@@ -4,14 +4,15 @@
 
 CUBRID_RESTORE_INFO cub_restore_info;
 void *cub_restore_handle = NULL;
+char *db_name;
 
 void usage ()
 {
-    printf ("./rs_test03\n\n");
+    printf ("./rs_test03 [DB_NAME]\n\n");
     printf ("ex)\n");
-    printf ("restore (full)    ==> ./rs_test03\n");
-    printf ("        (level 1) ==> ./rs_test03\n");
-    printf ("        (level 2) ==> ./rs_test03\n");
+    printf ("restore (full)    ==> ./rs_test03 demodb\n");
+    printf ("        (level 1) ==> ./rs_test03 demodb\n");
+    printf ("        (level 2) ==> ./rs_test03 demodb\n");
 }
 
 void pass_invalid_restore_info (void)
@@ -45,7 +46,7 @@ void pass_invalid_restore_info (void)
     cubrid_backup_finalize ();
 
     // test #2 - invalid backup_level 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 7; // 0 ~ 3 range
     restore_info.restore_type = RESTORE_TO_FILE;
     restore_info.backup_file_path = "./restore_dir";
@@ -69,7 +70,7 @@ void pass_invalid_restore_info (void)
     cubrid_backup_finalize ();
 
     // test #3 - invalid restore_type 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = 88; // 0 ~ 1 is vaild range
     restore_info.backup_file_path = "./restore_dir";
@@ -93,7 +94,7 @@ void pass_invalid_restore_info (void)
     cubrid_backup_finalize ();
 
     // test #4 - invalid backup file path: no permission
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = RESTORE_TO_FILE; // 0 ~ 1 is vaild range
     restore_info.backup_file_path = "/home";
@@ -117,7 +118,7 @@ void pass_invalid_restore_info (void)
     cubrid_backup_finalize ();
 
     // test #5 - invalid backup file path: not exist 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = RESTORE_TO_FILE; // 0 ~ 1 is vaild range
     restore_info.backup_file_path = "./RURURURU";
@@ -148,7 +149,7 @@ void pass_null_restore_handle (void)
 
     char restore_data_buffer[4096];
 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = RESTORE_TO_FILE;
     restore_info.backup_file_path = "./restore_dir";
@@ -198,7 +199,7 @@ void pass_invalid_restore_handle (void)
 
     char restore_data_buffer[4096];
 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = RESTORE_TO_FILE;
     restore_info.backup_file_path = "./restore_dir";
@@ -251,7 +252,7 @@ void pass_invalid_restore_args (void)
 
     char restore_data_buffer[4096];
 
-    restore_info.db_name = "demodb";
+    restore_info.db_name = db_name;
     restore_info.backup_level = 0;
     restore_info.restore_type = RESTORE_TO_FILE;
     restore_info.backup_file_path = "./restore_dir";
@@ -298,12 +299,12 @@ void pass_invalid_restore_args (void)
 
 int main (int argc, char *argv[])
 {
-    if (argc != 1)
+    if (argc != 2)
     {
         usage ();
         exit (1);
     }
-
+    db_name = argv[1];
     /* test - invalid restore arguments */
     pass_invalid_restore_info ();
 

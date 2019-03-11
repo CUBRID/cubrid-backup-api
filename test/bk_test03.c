@@ -1,14 +1,17 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include "cubrid_backup_api.h"
+
+char *db_name;
 
 void usage ()
 {
-    printf ("./bk_test03\n\n");
+    printf ("./bk_test03 [DB_NAME]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./bk_test03\n");
-    printf ("       (level 1) ==> ./bk_test03\n");
-    printf ("       (level 2) ==> ./bk_test03\n");
+    printf ("backup (full)    ==> ./bk_test03 demodb\n");
+    printf ("       (level 1) ==> ./bk_test03 demodb\n");
+    printf ("       (level 2) ==> ./bk_test03 demodb\n");
 }
 
 void pass_invalid_backup_info (void)
@@ -40,7 +43,7 @@ void pass_invalid_backup_info (void)
     cubrid_backup_finalize ();
 
     // test #2 - invalid backup_level
-    backup_info.db_name = "demodb";
+    backup_info.db_name = db_name;
     backup_info.backup_level = 1004;
 
     if (-1 == cubrid_backup_initialize ())
@@ -70,7 +73,7 @@ void pass_null_backup_handle (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = "demodb";
+    backup_info.db_name = db_name;
     backup_info.backup_level = 0;
 
     if (-1 == cubrid_backup_initialize ())
@@ -119,7 +122,7 @@ void pass_invalid_backup_handle (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = "demodb";
+    backup_info.db_name = db_name;
     backup_info.backup_level = 0;
 
     if (-1 == cubrid_backup_initialize ())
@@ -171,7 +174,7 @@ void pass_invalid_backup_args (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = "demodb";
+    backup_info.db_name = db_name;
     backup_info.backup_level = 0;
 
     if (-1 == cubrid_backup_initialize ())
@@ -216,16 +219,19 @@ void pass_invalid_backup_args (void)
 
 int main (int argc, char *argv[])
 {
-    if (argc != 1)
+    if (argc != 2)
     {
         usage ();
         exit (1);
     }
 
+    db_name = argv[1];
+
     /* test - invalid backup arguments */
     pass_invalid_backup_info ();
 
     pass_null_backup_handle ();
+    sleep(1);
 
     pass_invalid_backup_handle ();
 
