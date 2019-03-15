@@ -17,11 +17,11 @@ include_directories(src/include)
 set(CMAKE_C_COMPILER "gcc")
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
-    add_compile_options(-g -Wall)
+    #add_compile_options(-g -Wall)
 else()
     message(STATUS "No build type selected, default to Release")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type (default Release)")
-    add_compile_options(-g -Wall)
+    #add_compile_options(-g -Wall)
 endif()
 
 set(BACKUP_LIB "cubridbackup")

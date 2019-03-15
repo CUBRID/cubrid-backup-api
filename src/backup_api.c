@@ -41,7 +41,9 @@ int cubrid_backup_initialize (void)
         goto error;
     }
 
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_initialize ()\n");
+#endif
 
     return SUCCESS;
 
@@ -64,7 +66,9 @@ error:
 
 int cubrid_backup_finalize (void)
 {
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_finalize ()\n");
+#endif
 
     if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_FINALIZE)))
     {
@@ -99,9 +103,11 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle)
 {
     int state = 0;
 
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_begin (), backup_level => %d, db_name => %s\n",
                     backup_info->backup_level,
                     backup_info->db_name);
+#endif
 
     if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_BACKUP_BEGIN)))
     {
@@ -114,10 +120,17 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle)
     if (IS_FAILURE (begin_backup (backup_info, backup_handle)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_backup_begin (), backup_level => %d, db_name => %s\n",
+                        backup_info->backup_level,
+                        backup_info->db_name);
+
         goto error;
     }
 
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_begin (), backup_handle => %p\n", *backup_handle);
+#endif
 
     return SUCCESS;
 
@@ -136,7 +149,9 @@ error:
 
 int cubrid_backup_end (void* backup_handle)
 {
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_end (), backup_handle => %p\n", backup_handle);
+#endif
 
     if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_BACKUP_END)))
     {
@@ -147,6 +162,9 @@ int cubrid_backup_end (void* backup_handle)
     if (IS_FAILURE (end_backup (backup_handle)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_backup_end (), backup_handle => %p\n", backup_handle);
+
         goto error;
     }
 
@@ -165,7 +183,7 @@ error:
 
 int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len)
 {
-#if BACKUP_API_DEBUG
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_read (), backup_handle => %p, buffer => %p, buffer_size => %d, data_len => %p\n",
                     backup_handle,
                     buffer,
@@ -182,10 +200,17 @@ int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_s
     if (IS_FAILURE (read_backup_data (backup_handle, buffer, buffer_size, data_len)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_backup_read (), backup_handle => %p, buffer => %p, buffer_size => %d, data_len => %p\n",
+                        backup_handle,
+                        buffer,
+                        buffer_size,
+                        data_len);
+
         goto error;
     }
 
-#if BACKUP_API_DEBUG
+#if 0
     PRINT_LOG_INFO ("cubrid_backup_read (), data_len => %d\n", *data_len);
 #endif
 
@@ -200,11 +225,13 @@ int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_hand
 {
     int state = 0;
 
+#if 0
     PRINT_LOG_INFO ("cubrid_restore_begin (), restore_type => %d, backup_level => %d, backup_file_path => %s, db_name => %s\n",
                     restore_info->restore_type,
                     restore_info->backup_level,
                     restore_info->backup_file_path,
                     restore_info->db_name);
+#endif
 
     if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_RESTORE_BEGIN)))
     {
@@ -217,10 +244,19 @@ int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_hand
     if (IS_FAILURE (begin_restore (restore_info, restore_handle)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_restore_begin (), restore_type => %d, backup_level => %d, backup_file_path => %s, db_name => %s\n",
+                        restore_info->restore_type,
+                        restore_info->backup_level,
+                        restore_info->backup_file_path,
+                        restore_info->db_name);
+
         goto error;
     }
 
+#if 0
     PRINT_LOG_INFO ("cubrid_restore_begin (), restore_handle => %p\n", *restore_handle);
+#endif
 
     return SUCCESS;
 
@@ -239,7 +275,9 @@ error:
 
 int cubrid_restore_end (void* restore_handle)
 {
+#if 0
     PRINT_LOG_INFO ("cubrid_restore_end (), restore_handle => %p\n", restore_handle);
+#endif
 
     if (IS_FAILURE (check_api_call_sequence (FUNC_CALL_RESTORE_END)))
     {
@@ -250,6 +288,9 @@ int cubrid_restore_end (void* restore_handle)
     if (IS_FAILURE (end_restore (restore_handle)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_restore_end (), restore_handle => %p\n", restore_handle);
+
         goto error;
     }
 
@@ -268,7 +309,7 @@ error:
 
 int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, unsigned int data_len)
 {
-#if BACKUP_API_DEBUG
+#if 0
     PRINT_LOG_INFO ("cubrid_restore_write (), restore_handle => %p, backup_level => %d, buffer => %p, data_len => %d\n",
                     restore_handle,
                     backup_level,
@@ -285,6 +326,13 @@ int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, 
     if (IS_FAILURE (write_backup_data (restore_handle, backup_level, buffer, data_len)))
     {
         PRINT_LOG_ERR (ERR_INFO);
+
+        PRINT_LOG_INFO ("cubrid_restore_write (), restore_handle => %p, backup_level => %d, buffer => %p, data_len => %d\n",
+                        restore_handle,
+                        backup_level,
+                        buffer,
+                        data_len);
+
         goto error;
     }
 

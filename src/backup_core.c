@@ -629,7 +629,7 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
         goto error;
     }
 
-#if 1
+#if 0
     for (i = 0; i < idx - 1; i ++)
     {
         cmd_len += snprintf (backup_cmd + cmd_len, "%s", argv[i]);
