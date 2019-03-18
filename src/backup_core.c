@@ -536,6 +536,7 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
 
     backup_opt = &backup_mgr->default_backup_option;
 
+/*
     snprintf (cubrid, PATH_MAX, "%s/bin/cubrid", backup_mgr->cubrid_home);
 
     if (IS_FAILURE (check_path_length_limit (cubrid)))
@@ -543,8 +544,9 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
-
-    argv[idx ++] = cubrid;
+*/
+    //argv[idx ++] = cubrid;
+    argv[idx ++] = "cubrid";
 
     argv[idx ++] = "backupdb";
 
@@ -621,7 +623,9 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
 
     argv[idx] = '\0';
 
-    snprintf (cub_admin, PATH_MAX, "%s/bin/cub_admin", backup_mgr->cubrid_home);
+    // tech 요청으로 cub_admin -> cubrid 로 변경: cubrid_utility.log 에 기록 남기기 위해
+    //snprintf (cub_admin, PATH_MAX, "%s/bin/cub_admin", backup_mgr->cubrid_home);
+    snprintf (cub_admin, PATH_MAX, "%s/bin/cubrid", backup_mgr->cubrid_home);
 
     if (IS_FAILURE (check_path_length_limit (cub_admin)))
     {
@@ -657,6 +661,23 @@ error:
 }
 
 static
+void kill_process_group (pid_t pgid)
+{
+    struct sigaction act, old_act;
+
+    act.sa_handler = SIG_IGN;
+    sigemptyset (&act.sa_mask);
+    act.sa_flags   = 0;
+
+    // backup-api library 자체는 죽으면 안돼기 때문에
+    sigaction (SIGTERM, &act, &old_act);
+
+    killpg (pgid, SIGTERM);
+
+    sigaction (SIGTERM, &old_act, NULL);
+}
+
+static
 int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
 {
     sigset_t sa_mask;
@@ -670,6 +691,9 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
     wait_timeout.tv_sec  = 1;
     wait_timeout.tv_nsec = 0;
 
+    // 현재 cub_admin 을 직접 fork 하는 방식을 사용 중인데 log를 cubrid 유틸에서 남기기 때문에
+    // 기술 본부에서 참조하는 cubrid_utility.log 로그에 백업 관련 기록이 남지 않는다.
+    // 따러서 cubrid 를 fork 하는 방식으로 바꾸고 kill 시 다 죽이자 후손까지
     while (true)   
     {
         if (-1 == sigtimedwait (&sa_mask, NULL, &wait_timeout))
@@ -680,7 +704,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
                 continue;
             }
 
-            kill (backup_pid, SIGKILL);
+            kill_process_group (getpid ());
 
             break;
         }
@@ -692,7 +716,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
                 goto error;
             }
 
-            /* backup process(cub_admin) return or exit () */
+            /* backup process(cubrid) return or exit () */
             if (WIFEXITED (status))
             {
                 /*
@@ -715,7 +739,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
             /* backup process is stopped */
             else if (WIFSTOPPED(status))
             {
-                kill (backup_pid, SIGKILL);
+                kill_process_group (getpid ());
 
                 PRINT_LOG_ERR (ERR_INFO);
                 goto error;

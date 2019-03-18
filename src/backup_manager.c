@@ -88,12 +88,14 @@ int print_log (const char *prefix_str, const char *msg, ...)
 static
 int open_log_file (void)
 {
-    const char* LOG_FILE = ".cubrid_backup.log";
+    char log_file_path[PATH_MAX];
 
-    backup_mgr->log_fp = fopen (LOG_FILE, "a");
+    snprintf (log_file_path, PATH_MAX, "%s/log/cubrid_backup.log", getenv ("CUBRID"));
+
+    backup_mgr->log_fp = fopen (log_file_path, "a");
     if (backup_mgr->log_fp == NULL)
     {
-        PRINT_LOG_ERR (ERR_INFO);
+        //PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
 
@@ -782,7 +784,7 @@ int start_backup_manager (void)
 {
     if (IS_FAILURE (open_log_file ()))
     {
-        PRINT_LOG_ERR (ERR_INFO);
+        //PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
 
