@@ -669,12 +669,26 @@ void kill_process_group (pid_t pgid)
     sigemptyset (&act.sa_mask);
     act.sa_flags   = 0;
 
+    //printf ("pid: %d, pgid: %d\n", getpid (), getpgid (getpid ()));
+
     // backup-api library 자체는 죽으면 안돼기 때문에
     sigaction (SIGTERM, &act, &old_act);
 
     killpg (pgid, SIGTERM);
 
     sigaction (SIGTERM, &old_act, NULL);
+
+#if 0
+    // FAILURE: Has been interrupted. 를 cubrid_utility.log 에 남기기 위해
+    // SIGINT 를 사용하려고 했으나, cub_admin 에서 SIG_INT 핸들러를 등록해두어서
+    // cub_admin 이 바로 죽지 않는다.
+    // FAILURE: Has been interrupted. 로그를 남긴다는 것 자체가 정상 종료(예외처리) 했다는 것이다.
+    sigaction (SIGINT, &act, &old_act);
+
+    killpg (pgid, SIGINT);
+
+    sigaction (SIGINT, &old_act, NULL);
+#endif
 }
 
 static
@@ -704,7 +718,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
                 continue;
             }
 
-            kill_process_group (getpid ());
+            kill_process_group (getpgid (backup_pid));
 
             break;
         }
@@ -739,7 +753,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
             /* backup process is stopped */
             else if (WIFSTOPPED(status))
             {
-                kill_process_group (getpid ());
+                kill_process_group (getpgid (backup_pid));
 
                 PRINT_LOG_ERR (ERR_INFO);
                 goto error;
@@ -769,6 +783,9 @@ void* execute_backup (void* handle)
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
+
+    // for kill process group
+    setpgid (getpid (), getpid ());
 
     backup_handle = (BACKUP_HANDLE *)handle;
 
