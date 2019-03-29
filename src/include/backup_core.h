@@ -40,7 +40,7 @@ int begin_backup (CUBRID_BACKUP_INFO*, void**);
 int end_backup (BACKUP_HANDLE*);
 int begin_restore (CUBRID_RESTORE_INFO*, void**);
 int end_restore (RESTORE_HANDLE*);
-int read_backup_data (BACKUP_HANDLE*, void*, unsigned int, unsigned int*);
+int read_backup_data (BACKUP_HANDLE*, void*, unsigned int, unsigned int*, bool*);
 int write_backup_data (RESTORE_HANDLE*, int, void*, unsigned int);
 
 #endif

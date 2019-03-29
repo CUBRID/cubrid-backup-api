@@ -691,6 +691,20 @@ void kill_process_group (pid_t pgid)
 #endif
 }
 
+void zombie_handler()
+{
+    /*
+    int status;
+    int spid;
+    spid = wait(&status);
+    printf("자식프로세스 wait 성공 \n");
+    printf("================================\n");
+    printf("PID         : %d\n", spid);
+    printf("Exit Value  : %d\n", WEXITSTATUS(status));
+    printf("Exit Stat   : %d\n", WIFEXITED(status));
+    */
+}
+
 static
 int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
 {
@@ -705,11 +719,26 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
     wait_timeout.tv_sec  = 1;
     wait_timeout.tv_nsec = 0;
 
+    // SIGCHLD에 대한 빈 핸들러를 등록한 이유는
+    // 아래 sigtimedwait () 에서 cubrid의 종료를 감지하지 못하기 때문이다.
+    // 따라서 cubrid 유틸은 <defunct> 상태가 되며,
+    // cubrid_backup_read () 에서는 백업 쓰레드가 종료되었다는 사실을 모르게 된다.
+    // 테스트 용으로 zombie_handler 를 등록했는데,
+    // 원하는대로 cubrid 유틸 종료시 SIGCHLD를 던저주며, 이를 catch할 수 있게 됐다.
+    // 이유는 아직 못찾았다.
+    signal(SIGCHLD, (void *)zombie_handler);
+
     // 현재 cub_admin 을 직접 fork 하는 방식을 사용 중인데 log를 cubrid 유틸에서 남기기 때문에
     // 기술 본부에서 참조하는 cubrid_utility.log 로그에 백업 관련 기록이 남지 않는다.
     // 따러서 cubrid 를 fork 하는 방식으로 바꾸고 kill 시 다 죽이자 후손까지
     while (true)   
     {
+        //sigemptyset (&sa_mask);
+        //sigaddset (&sa_mask, SIGCHLD);
+        //int ret;
+
+        //ret = sigtimedwait (&sa_mask, NULL, &wait_timeout);
+        //if (-1 == ret)
         if (-1 == sigtimedwait (&sa_mask, NULL, &wait_timeout))
         {
             /* timeout */
@@ -718,12 +747,14 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
                 continue;
             }
 
+            //printf ("must hit here 4\n");
             kill_process_group (getpgid (backup_pid));
 
             break;
         }
         else
         {
+            //printf ("must hit here 1, ret val => %d, SIGCHLD => %d\n", ret, SIGCHLD);
             if (-1 == waitpid (backup_pid, &status, 0))
             {
                 PRINT_LOG_ERR (ERR_INFO);
@@ -763,6 +794,7 @@ int check_backup_process_status (BACKUP_HANDLE* backup_handle, pid_t backup_pid)
         }
     }
 
+    //printf ("must hit here 2\n");
     return SUCCESS;
 
 error:
@@ -824,6 +856,7 @@ void* execute_backup (void* handle)
     //     이유는 백업은 thread 생성해서 수행되고, cubrid_backup_finalize () 호출은 main thread가
     //     호출하기 때문에 두 thread id가 달라서 발생된다고 분석된 상태.
     //     별도의 thread나 process를 생성해야 하는 이유는 사용자 레벨에서의 hang 방지.
+    //printf ("must hit here 3\n");
     set_thread_state (BACKUP_HANDLE_TYPE, backup_handle, THREAD_STATE_EXIT);
 
     pthread_exit (NULL);
@@ -1035,7 +1068,7 @@ error:
 }
 
 static
-int read_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int buffer_size, unsigned int* data_len)
+int read_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int buffer_size, unsigned int* data_len, bool* is_backup_end)
 {
     int io_size = 0;
     int read_len = 0;
@@ -1067,20 +1100,22 @@ int read_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int buffer_s
             goto error;
         }
 
-        if (read_len == 0)
+        total_read_len += read_len;
+
+        if (total_read_len == 0)
         {
             if (backup_handle->backup_thread_state == THREAD_STATE_EXIT)
             {
+                *is_backup_end = true;
+
                 break;
             }
         }
-
-        total_read_len += read_len;
     }
 
     io_size = buffer_size % io_size;
 
-    if (io_size != 0)
+    if (io_size != 0 && *is_backup_end != true) // refactoring
     {
         if (backup_handle->backup_thread_state == THREAD_STATE_EXIT_WITH_ERROR)
         {
@@ -1095,6 +1130,14 @@ int read_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int buffer_s
         }
 
         total_read_len += read_len;
+
+        if (total_read_len == 0)
+        {
+            if (backup_handle->backup_thread_state == THREAD_STATE_EXIT)
+            {
+                *is_backup_end = true;
+            }
+        }
     }
 
     *data_len = total_read_len;
@@ -1106,7 +1149,7 @@ error:
     return FAILURE;
 }
 
-int read_backup_data (BACKUP_HANDLE* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len)
+int read_backup_data (BACKUP_HANDLE* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len, bool* is_backup_end)
 {
     int state = 0;
 
@@ -1130,7 +1173,7 @@ int read_backup_data (BACKUP_HANDLE* backup_handle, void* buffer, unsigned int b
 
     state = 1;
 
-    if (IS_FAILURE (read_data (backup_handle, buffer, buffer_size, data_len)))
+    if (IS_FAILURE (read_data (backup_handle, buffer, buffer_size, data_len, is_backup_end)))
     {
         PRINT_LOG_ERR (ERR_INFO);
         goto error;

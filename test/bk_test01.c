@@ -27,6 +27,8 @@ int main (int argc, char *argv[])
 
     int  total_backup_data_size = 0;
 
+    int  backup_result;
+
     FILE *backup_fp;
 
     if (argc != 4)
@@ -53,7 +55,8 @@ int main (int argc, char *argv[])
 
     while (1)
     {
-        if (-1 == cubrid_backup_read (cub_backup_handle, backup_data_buffer, 4096, &backup_data_size))
+        backup_result = cubrid_backup_read (cub_backup_handle, backup_data_buffer, 4096, &backup_data_size);
+        if (-1 == backup_result)
         {
             printf ("[NOK] failed the execution of cubrid_backup_read ()\n");
             exit (1);
@@ -65,7 +68,8 @@ int main (int argc, char *argv[])
 
             total_backup_data_size += backup_data_size;
         }
-        else
+
+        if (0 == backup_result) // 0: backup end, 1: read more backup data
         {
             break;
         }

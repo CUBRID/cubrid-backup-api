@@ -183,6 +183,7 @@ error:
 
 int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len)
 {
+    bool is_backup_end = false;
 #if 0
     PRINT_LOG_INFO ("cubrid_backup_read (), backup_handle => %p, buffer => %p, buffer_size => %d, data_len => %p\n",
                     backup_handle,
@@ -197,7 +198,7 @@ int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_s
         goto error;
     }
 
-    if (IS_FAILURE (read_backup_data (backup_handle, buffer, buffer_size, data_len)))
+    if (IS_FAILURE (read_backup_data (backup_handle, buffer, buffer_size, data_len, &is_backup_end)))
     {
         PRINT_LOG_ERR (ERR_INFO);
 
@@ -214,7 +215,14 @@ int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_s
     PRINT_LOG_INFO ("cubrid_backup_read (), data_len => %d\n", *data_len);
 #endif
 
-    return SUCCESS;
+    if (is_backup_end == true)
+    {
+        return SUCCESS;
+    }
+    else
+    {
+        return SUCCESS_FRAGMENTED;
+    }
 
 error:
 

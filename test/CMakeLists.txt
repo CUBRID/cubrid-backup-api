@@ -5,7 +5,7 @@ project(samples)
 
 set(CMAKE_C_COMPILER gcc)
 
-add_compile_options(-g -Wall)
+#add_compile_options(-g -Wall)
 
 set(BACKUP_TEST01 "bk_test01")
 set(BACKUP_TEST02 "bk_test02")
