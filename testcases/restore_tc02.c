@@ -7,11 +7,11 @@ void *cub_restore_handle = NULL;
 
 void usage ()
 {
-    printf ("./rs_test02 [DB_NAME] [BACKUP_LEVEL] [RESTORE_TYPE] [RESTORE_PATH]\n\n");
+    printf ("./restore_tc02 [DB_NAME] [BACKUP_LEVEL] [RESTORE_TYPE] [RESTORE_PATH]\n\n");
     printf ("ex)\n");
-    printf ("restore (full)    ==> ./rs_test02 demodb 0 0 ./restore_dir\n");
-    printf ("        (level 1) ==> ./rs_test02 demodb 1 0 ./restore_dir\n");
-    printf ("        (level 2) ==> ./rs_test02 demodb 2 0 ./restore_dir\n");
+    printf ("restore (full)    ==> ./restore_tc02 demodb 0 0 ./restore_dir\n");
+    printf ("        (level 1) ==> ./restore_tc02 demodb 1 0 ./restore_dir\n");
+    printf ("        (level 2) ==> ./restore_tc02 demodb 2 0 ./restore_dir\n");
 }
 
 void set_restore_info (CUBRID_RESTORE_INFO *restore_info, char *db_name, char *backup_level, char *restore_type, char *restore_path)

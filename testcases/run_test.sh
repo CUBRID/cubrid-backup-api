@@ -5,9 +5,10 @@ cur_path=`pwd`
 db_name='testdb'
 
 cd ..
-cmake .
-make
-cd test
+sh build.sh
+cp build_*/cubrid-backup-api-*.tar.gz testcases/
+cd testcases
+tar xfz cubrid-backup-api-*.tar.gz
 cmake .
 make
 
@@ -33,18 +34,18 @@ echo ""
 echo "============================"
 echo "==cubrid backup api test start"
 echo ""
-echo "==run bk_test01"
-./bk_test01 $db_name 0 ./backup_dir/${db_name}_bk0v000 > bk_test01_result 2>&1 
+echo "==run backup_tc01"
+./backup_tc01 $db_name 0 ./backup_dir/${db_name}_bk0v000 > backup_tc01_result 2>&1 
 sleep 1
-./bk_test01 $db_name 1 ./backup_dir/${db_name}_bk1v000 >> bk_test01_result 2>&1 
+./backup_tc01 $db_name 1 ./backup_dir/${db_name}_bk1v000 >> backup_tc01_result 2>&1 
 sleep 1
-./bk_test01 $db_name 2 ./backup_dir/${db_name}_bk2v000 >> bk_test01_result 2>&1 
+./backup_tc01 $db_name 2 ./backup_dir/${db_name}_bk2v000 >> backup_tc01_result 2>&1 
 
 sleep 1
 if [ `grep "cubrid backupdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 3 ]; then
-	echo "[OK] cubrid_utility.log" >> bk_test01_result
+	echo "[OK] cubrid_utility.log" >> backup_tc01_result
 else
-	echo "[NOK] cubrid_utility.log" >> bk_test01_result
+	echo "[NOK] cubrid_utility.log" >> backup_tc01_result
 fi
 echo ""
 cubrid server stop $db_name
@@ -52,55 +53,55 @@ rm -rf $db_name
 restoredb_exe "-B ./backup_dir -l 2"
 cubrid server start $db_name
 if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
-	echo "[NOK] run restoredb" >> bk_test01_result
+	echo "[NOK] run restoredb" >> backup_tc01_result
 	cubrid deletedb $db_name
 	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
 	cubrid server start $db_name
 else
-	echo "[OK] run restoredb" >> bk_test01_result
+	echo "[OK] run restoredb" >> backup_tc01_result
 fi
 echo ""
 
-echo "==run rs_test01"
-./rs_test01 $db_name 0 ./backup_dir/${db_name}_bk0v000 0 ./restore_dir/ > rs_test01_result 2>&1
+echo "==run restore_tc01"
+./restore_tc01 $db_name 0 ./backup_dir/${db_name}_bk0v000 0 ./restore_dir/ > restore_tc01_result 2>&1
 if [ -z "`cmp ./backup_dir/${db_name}_bk0v000 ./restore_dir/${db_name}_bk0v000`" ]; then
-	echo "[OK] compare restore file of level 0" >> rs_test01_result
+	echo "[OK] compare restore file of level 0" >> restore_tc01_result
 else
-	echo "[NOK] compare restore file of level 0" >> rs_test01_result
+	echo "[NOK] compare restore file of level 0" >> restore_tc01_result
 fi
-./rs_test01 $db_name 1 ./backup_dir/${db_name}_bk1v000 0 ./restore_dir/ >> rs_test01_result 2>&1
+./restore_tc01 $db_name 1 ./backup_dir/${db_name}_bk1v000 0 ./restore_dir/ >> restore_tc01_result 2>&1
 if [ -z "`cmp ./backup_dir/${db_name}_bk1v000 ./restore_dir/${db_name}_bk1v000`" ]; then
-	echo "[OK] compare restore file of level 1" >> rs_test01_result
+	echo "[OK] compare restore file of level 1" >> restore_tc01_result
 else
-	echo "[NOK] compare restore file of level 1" >> rs_test01_result
+	echo "[NOK] compare restore file of level 1" >> restore_tc01_result
 fi
-./rs_test01 $db_name 2 ./backup_dir/${db_name}_bk2v000 0 ./restore_dir/ >> rs_test01_result 2>&1
+./restore_tc01 $db_name 2 ./backup_dir/${db_name}_bk2v000 0 ./restore_dir/ >> restore_tc01_result 2>&1
 if [ -z "`cmp ./backup_dir/${db_name}_bk2v000 ./restore_dir/${db_name}_bk2v000`" ]; then
-	echo "[OK] compare restore file of level 2" >> rs_test01_result
+	echo "[OK] compare restore file of level 2" >> restore_tc01_result
 else
-	echo "[NOK] compare restore file of level 2" >> rs_test01_result
+	echo "[NOK] compare restore file of level 2" >> restore_tc01_result
 fi
 echo ""
-echo "==run bk_test02"
-./bk_test02 $db_name 0 > bk_test02_result 2>&1 
+echo "==run backup_tc02"
+./backup_tc02 $db_name 0 > backup_tc02_result 2>&1 
 sleep 5
-./bk_test02 $db_name 1 >> bk_test02_result 2>&1 
+./backup_tc02 $db_name 1 >> backup_tc02_result 2>&1 
 sleep 1
-./bk_test02 $db_name 2 >> bk_test02_result 2>&1 
+./backup_tc02 $db_name 2 >> backup_tc02_result 2>&1 
 echo ""
 
-echo "==run rs_test02"
-./rs_test02 $db_name 0 0 ./restore_dir > rs_test02_result 2>&1 
-./rs_test02 $db_name 1 0 ./restore_dir >> rs_test02_result 2>&1 
-./rs_test02 $db_name 2 0 ./restore_dir >> rs_test02_result 2>&1 
+echo "==run restore_tc02"
+./restore_tc02 $db_name 0 0 ./restore_dir > restore_tc02_result 2>&1 
+./restore_tc02 $db_name 1 0 ./restore_dir >> restore_tc02_result 2>&1 
+./restore_tc02 $db_name 2 0 ./restore_dir >> restore_tc02_result 2>&1 
 echo ""
 
-echo "==run bk_test03"
-./bk_test03 ${db_name} > bk_test03_result 2>&1 
+echo "==run backup_tc03"
+./backup_tc03 ${db_name} > backup_tc03_result 2>&1 
 echo ""
 
-echo "==run rs_test03"
-./rs_test03 ${db_name} > rs_test03_result 2>&1 
+echo "==run restore_tc03"
+./restore_tc03 ${db_name} > restore_tc03_result 2>&1 
 echo ""
 
 echo "==run conf_test"

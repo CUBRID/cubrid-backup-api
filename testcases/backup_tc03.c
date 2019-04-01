@@ -7,11 +7,11 @@ char *db_name;
 
 void usage ()
 {
-    printf ("./bk_test03 [DB_NAME]\n\n");
+    printf ("./backup_tc03 [DB_NAME]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./bk_test03 demodb\n");
-    printf ("       (level 1) ==> ./bk_test03 demodb\n");
-    printf ("       (level 2) ==> ./bk_test03 demodb\n");
+    printf ("backup (full)    ==> ./backup_tc03 demodb\n");
+    printf ("       (level 1) ==> ./backup_tc03 demodb\n");
+    printf ("       (level 2) ==> ./backup_tc03 demodb\n");
 }
 
 void pass_invalid_backup_info (void)

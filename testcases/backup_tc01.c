@@ -4,11 +4,11 @@
 
 void usage ()
 {
-    printf ("./bk_test01 [DB_NAME] [BACKUP_LEVEL] [BACKUP_FILE_PATH]\n\n");
+    printf ("./backup_tc01 [DB_NAME] [BACKUP_LEVEL] [BACKUP_FILE_PATH]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./bk_test01 demodb 0 ./backup_dir/demodb_bk0v000\n");
-    printf ("       (level 1) ==> ./bk_test01 demodb 1 ./backup_dir/demodb_bk1v000\n");
-    printf ("       (level 2) ==> ./bk_test01 demodb 2 ./backup_dir/demodb_bk2v000\n");
+    printf ("backup (full)    ==> ./backup_tc01 demodb 0 ./backup_dir/demodb_bk0v000\n");
+    printf ("       (level 1) ==> ./backup_tc01 demodb 1 ./backup_dir/demodb_bk1v000\n");
+    printf ("       (level 2) ==> ./backup_tc01 demodb 2 ./backup_dir/demodb_bk2v000\n");
 }
 
 void set_backup_info (CUBRID_BACKUP_INFO *backup_info, char *db_name, char *backup_level)

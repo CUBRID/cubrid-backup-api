@@ -5,11 +5,11 @@
 
 void usage ()
 {
-    printf ("./rs_test01 [DB_NAME] [BACKUP_LEVEL] [BACKUP_FILE_PATH] [RESTORE_TYPE] [RESTORE_PATH]\n\n");
+    printf ("./restore_tc01 [DB_NAME] [BACKUP_LEVEL] [BACKUP_FILE_PATH] [RESTORE_TYPE] [RESTORE_PATH]\n\n");
     printf ("ex)\n");
-    printf ("restore (full)    ==> ./rs_test01 demodb 0 ./backup_dir/demodb_bk0v000 0 ./restore_dir\n");
-    printf ("        (level 1) ==> ./rs_test01 demodb 1 ./backup_dir/demodb_bk1v000 0 ./restore_dir\n");
-    printf ("        (level 2) ==> ./rs_test01 demodb 2 ./backup_dir/demodb_bk2v000 0 ./restore_dir\n");
+    printf ("restore (full)    ==> ./restore_tc01 demodb 0 ./backup_dir/demodb_bk0v000 0 ./restore_dir\n");
+    printf ("        (level 1) ==> ./restore_tc01 demodb 1 ./backup_dir/demodb_bk1v000 0 ./restore_dir\n");
+    printf ("        (level 2) ==> ./restore_tc01 demodb 2 ./backup_dir/demodb_bk2v000 0 ./restore_dir\n");
 }
 
 void set_restore_info (CUBRID_RESTORE_INFO *restore_info, char *db_name, char *backup_level, char *restore_type, char *restore_path)

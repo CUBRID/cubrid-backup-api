@@ -8,11 +8,11 @@ char *db_name;
 
 void usage ()
 {
-    printf ("./rs_test03 [DB_NAME]\n\n");
+    printf ("./restore_tc03 [DB_NAME]\n\n");
     printf ("ex)\n");
-    printf ("restore (full)    ==> ./rs_test03 demodb\n");
-    printf ("        (level 1) ==> ./rs_test03 demodb\n");
-    printf ("        (level 2) ==> ./rs_test03 demodb\n");
+    printf ("restore (full)    ==> ./restore_tc03 demodb\n");
+    printf ("        (level 1) ==> ./restore_tc03 demodb\n");
+    printf ("        (level 2) ==> ./restore_tc03 demodb\n");
 }
 
 void pass_invalid_restore_info (void)

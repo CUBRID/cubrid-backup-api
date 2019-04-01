@@ -9,11 +9,11 @@ void *cub_backup_handle2 = NULL;
 
 void usage ()
 {
-    printf ("./bk_test02 [DB_NAME] [BACKUP_LEVEL]\n\n");
+    printf ("./backup_tc02 [DB_NAME] [BACKUP_LEVEL]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./bk_test02 demodb 0\n");
-    printf ("       (level 1) ==> ./bk_test02 demodb 1\n");
-    printf ("       (level 2) ==> ./bk_test02 demodb 2\n");
+    printf ("backup (full)    ==> ./backup_tc02 demodb 0\n");
+    printf ("       (level 1) ==> ./backup_tc02 demodb 1\n");
+    printf ("       (level 2) ==> ./backup_tc02 demodb 2\n");
 }
 
 void set_backup_info (CUBRID_BACKUP_INFO *backup_info, char *db_name, char *backup_level)
