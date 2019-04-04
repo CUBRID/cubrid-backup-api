@@ -4,20 +4,20 @@
 
 void usage ()
 {
-    printf ("./backup_tc01 [DB_NAME] [BACKUP_LEVEL] [BACKUP_FILE_PATH]\n\n");
+    printf ("./backup_tc04 [DB_NAME] [BACKUP_LEVEL] [REMOVE_ARCHIVE] [SA_MODE] [NO_CHECK] [COMPRESS] [BACKUP_FILE_PATH]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./backup_tc01 demodb 0 ./backup_dir/demodb_bk0v000\n");
-    printf ("       (level 1) ==> ./backup_tc01 demodb 1 ./backup_dir/demodb_bk1v000\n");
-    printf ("       (level 2) ==> ./backup_tc01 demodb 2 ./backup_dir/demodb_bk2v000\n");
+    printf ("backup (full)    ==> ./backup_tc04 demodb 0 1 0 1 1 ./backup_dir/demodb_bk0v000\n");
+    printf ("       (level 1) ==> ./backup_tc04 demodb 1 1 0 1 1 ./backup_dir/demodb_bk1v000\n");
+    printf ("       (level 2) ==> ./backup_tc04 demodb 2 1 0 1 1 ./backup_dir/demodb_bk2v000\n");
 }
 
-void set_backup_info (CUBRID_BACKUP_INFO *backup_info, char *db_name, char *backup_level)
+void set_backup_info (CUBRID_BACKUP_INFO *backup_info, char *db_name, char *backup_level, char *remove_archive, char *sa_mode, char *no_check, char *compress)
 {
     backup_info->backup_level   = atoi (backup_level);
-    backup_info->remove_archive = -1;
-    backup_info->sa_mode        = -1;
-    backup_info->no_check       = -1;
-    backup_info->compress       = -1;
+    backup_info->remove_archive = atoi (remove_archive);
+    backup_info->sa_mode        = atoi (sa_mode);
+    backup_info->no_check       = atoi (no_check);
+    backup_info->compress       = atoi (compress);
     backup_info->db_name        = db_name;
 }
 
@@ -35,15 +35,15 @@ int main (int argc, char *argv[])
 
     FILE *backup_fp;
 
-    if (argc != 4)
+    if (argc != 8)
     {
         usage ();
         exit (1);
     }
 
-    set_backup_info (&cub_backup_info, argv[1], argv[2]);
+    set_backup_info (&cub_backup_info, argv[1], argv[2], argv[3], argv[4], argv[5], argv[6]);
 
-    backup_fp = fopen (argv[3], "w+b");
+    backup_fp = fopen (argv[7], "w+b");
 
     if (-1 == cubrid_backup_initialize ())
     {

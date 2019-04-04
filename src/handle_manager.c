@@ -44,7 +44,11 @@ int initialize_backup_handle (BACKUP_HANDLE* backup_handle)
 
     backup_handle->is_cancel = false;
 
-    backup_handle->backup_level = BACKUP_FULL_LEVEL;
+    backup_handle->backup_level   = BACKUP_FULL_LEVEL;
+    backup_handle->remove_archive = false;
+    backup_handle->sa_mode        = false;
+    backup_handle->no_check       = false;
+    backup_handle->compress       = false;
 
     backup_handle->fifo_fd = -1;
     backup_handle->fifo_path[0] = '\0';

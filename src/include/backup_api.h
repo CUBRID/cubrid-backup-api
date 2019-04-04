@@ -5,6 +5,10 @@ typedef struct cubrid_backup_info CUBRID_BACKUP_INFO;
 struct cubrid_backup_info
 {
     int backup_level;
+    int remove_archive;
+    int sa_mode;
+    int no_check;
+    int compress;
     const char* db_name;
 };
 

@@ -43,6 +43,10 @@ struct backup_handle
     bool is_cancel;
 
     BACKUP_LEVEL backup_level;
+    bool remove_archive;
+    bool sa_mode;
+    bool no_check;
+    bool compress;
 
     int fifo_fd;
     char fifo_path[PATH_MAX];

@@ -243,6 +243,37 @@ int check_backup_info (CUBRID_BACKUP_INFO* backup_info)
         goto error;
     }
 
+    // -1: use cubrid_backup.conf configuration
+    // 0 : unset
+    // 1 : set
+    if (backup_info->remove_archive < -1 ||
+        backup_info->remove_archive > 1)
+    {
+        PRINT_LOG_ERR (ERR_INFO);
+        goto error;
+    }
+
+    if (backup_info->sa_mode < -1 ||
+        backup_info->sa_mode > 1)
+    {
+        PRINT_LOG_ERR (ERR_INFO);
+        goto error;
+    }
+
+    if (backup_info->no_check < -1 ||
+        backup_info->no_check > 1)
+    {
+        PRINT_LOG_ERR (ERR_INFO);
+        goto error;
+    }
+
+    if (backup_info->compress < -1 ||
+        backup_info->compress > 1)
+    {
+        PRINT_LOG_ERR (ERR_INFO);
+        goto error;
+    }
+
     if (IS_NULL (backup_info->db_name))
     {
         PRINT_LOG_ERR (ERR_INFO);
@@ -265,13 +296,53 @@ error:
 static
 int set_backup_info (CUBRID_BACKUP_INFO* backup_info, BACKUP_HANDLE* backup_handle)
 {
+    BACKUP_OPTION* backup_opt;
+
     if (IS_FAILURE (check_backup_info (backup_info)))
     {
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
 
+    backup_opt = &backup_mgr->default_backup_option;
+
     backup_handle->backup_level = backup_info->backup_level;
+
+    if (backup_info->remove_archive == -1)
+    {
+        backup_handle->remove_archive = backup_opt->remove_archive;
+    }
+    else
+    {
+        backup_handle->remove_archive = backup_info->remove_archive == 1 ? true : false;
+    }
+
+    if (backup_info->sa_mode == -1)
+    {
+        backup_handle->sa_mode = backup_opt->sa_mode;
+    }
+    else
+    {
+        backup_handle->sa_mode = backup_info->sa_mode == 1 ? true : false;
+    }
+
+    if (backup_info->no_check == -1)
+    {
+        backup_handle->no_check = backup_opt->no_check;
+    }
+    else
+    {
+        backup_handle->no_check = backup_info->no_check == 1 ? true : false;
+    }
+
+    if (backup_info->compress == -1)
+    {
+        backup_handle->compress = backup_opt->compress;
+    }
+    else
+    {
+        backup_handle->compress = backup_info->compress == 1 ? true : false;
+    }
 
     snprintf (backup_handle->db_name, MAX_DB_NAME_LEN + 1, "%s", backup_info->db_name);
 
@@ -521,7 +592,7 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
     char* argv[16];
     int idx = 0;
 
-    char cubrid[PATH_MAX];
+//    char cubrid[PATH_MAX];
     char cub_admin[PATH_MAX];
 
     char thread_count[11];
@@ -529,10 +600,12 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
 
     char* db_name;
 
+#if 0
     // for INFO
     char backup_cmd[8192] = {0};
     int cmd_len = 0;
     int i;
+#endif
 
     backup_opt = &backup_mgr->default_backup_option;
 
@@ -555,7 +628,7 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
     argv[idx ++] = backup_handle->fifo_path;
 
     /* --remove-archive */
-    if (backup_opt->remove_archive == true)
+    if (backup_handle->remove_archive == true)
     {
         argv[idx ++] = "-r";
     }
@@ -577,13 +650,13 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
     }
 
     /* --SA-mode */
-    if (backup_opt->sa_mode == true)
+    if (backup_handle->sa_mode == true)
     {
         argv[idx ++] = "-S";
     }
 
     /* --no-check */
-    if (backup_opt->no_check == true)
+    if (backup_handle->no_check == true)
     {
         argv[idx ++] = "--no-check";
     }
@@ -598,7 +671,7 @@ int execute_cubrid_backupdb (BACKUP_HANDLE* backup_handle)
     }
 
     /* --compress */
-    if (backup_opt->compress == true)
+    if (backup_handle->compress == true)
     {
         argv[idx ++] = "-z";
     }

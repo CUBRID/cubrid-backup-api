@@ -246,6 +246,7 @@ int make_backup_home (void)
     /* (1) $CUBRID/tmp */
     snprintf (backup_path, PATH_MAX, "%s/tmp", backup_mgr->cubrid_home);
 
+    // 여기서 체크 후 error log 남을 수 있지만 버그 아니다.
     if (IS_SUCCESS (validate_dir (backup_path)))
     {
 
@@ -257,6 +258,7 @@ int make_backup_home (void)
 
         remove_trailing_slash (backup_path);
 
+        // 여기서 체크 후 error log 남을 수 있지만 버그 아니다.
         if (IS_SUCCESS (validate_dir (backup_path)))
         {
 

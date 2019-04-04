@@ -104,6 +104,94 @@ echo "==run restore_tc03"
 ./restore_tc03 ${db_name} > restore_tc03_result 2>&1 
 echo ""
 
+echo "==run backup_tc04"
+./backup_tc04 $db_name 0 -1 -1 -1 -1 ./backup_dir/${db_name}_bk0v000 > backup_tc04_result 2>&1 
+
+echo ""
+cubrid server stop $db_name
+rm -rf $db_name
+restoredb_exe "-B ./backup_dir -l 0"
+cubrid server start $db_name
+if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
+	echo "[NOK] run restoredb" >> backup_tc04_result
+	cubrid deletedb $db_name
+	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
+	cubrid server start $db_name
+else
+	echo "[OK] run restoredb" >> backup_tc04_result
+fi
+sleep 1
+
+./backup_tc04 $db_name 0 1 0 1 1 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+
+echo ""
+cubrid server stop $db_name
+rm -rf $db_name
+restoredb_exe "-B ./backup_dir -l 0"
+cubrid server start $db_name
+if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
+	echo "[NOK] run restoredb" >> backup_tc04_result
+	cubrid deletedb $db_name
+	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
+	cubrid server start $db_name
+else
+	echo "[OK] run restoredb" >> backup_tc04_result
+fi
+sleep 1
+
+./backup_tc04 $db_name 0 1 0 0 0 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+
+echo ""
+cubrid server stop $db_name
+rm -rf $db_name
+restoredb_exe "-B ./backup_dir -l 0"
+cubrid server start $db_name
+if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
+	echo "[NOK] run restoredb" >> backup_tc04_result
+	cubrid deletedb $db_name
+	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
+	cubrid server start $db_name
+else
+	echo "[OK] run restoredb" >> backup_tc04_result
+fi
+sleep 1
+
+./backup_tc04 $db_name 0 0 0 1 0 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+
+echo ""
+cubrid server stop $db_name
+rm -rf $db_name
+restoredb_exe "-B ./backup_dir -l 0"
+cubrid server start $db_name
+if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
+	echo "[NOK] run restoredb" >> backup_tc04_result
+	cubrid deletedb $db_name
+	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
+	cubrid server start $db_name
+else
+	echo "[OK] run restoredb" >> backup_tc04_result
+fi
+sleep 1
+
+./backup_tc04 $db_name 0 0 0 0 1 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+
+echo ""
+cubrid server stop $db_name
+rm -rf $db_name
+restoredb_exe "-B ./backup_dir -l 0"
+cubrid server start $db_name
+if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; then
+	echo "[NOK] run restoredb" >> backup_tc04_result
+	cubrid deletedb $db_name
+	cubrid createdb -r --db-volume-size=100M --log-volume-size=100M $db_name en_US
+	cubrid server start $db_name
+else
+	echo "[OK] run restoredb" >> backup_tc04_result
+fi
+sleep 1
+
+echo ""
+
 echo "==run conf_test"
 echo ""
 sh conf_test.sh $db_name

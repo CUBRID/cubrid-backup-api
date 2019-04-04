@@ -18,8 +18,12 @@ void usage ()
 
 void set_backup_info (CUBRID_BACKUP_INFO *backup_info, char *db_name, char *backup_level)
 {
-    backup_info->db_name      = db_name;
-    backup_info->backup_level = atoi (backup_level);
+    backup_info->db_name        = db_name;
+    backup_info->backup_level   = atoi (backup_level);
+    backup_info->remove_archive = -1;
+    backup_info->sa_mode        = -1;
+    backup_info->no_check       = -1;
+    backup_info->compress       = -1;
 }
 
 void call_cubrid_backup_begin_without_initialize (void)

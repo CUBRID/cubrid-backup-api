@@ -121,8 +121,12 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle)
     {
         PRINT_LOG_ERR (ERR_INFO);
 
-        PRINT_LOG_INFO ("cubrid_backup_begin (), backup_level => %d, db_name => %s\n",
+        PRINT_LOG_INFO ("cubrid_backup_begin (), backup_level => %d, remove_archive => %d, sa_mode => %d, no_check => %d, compress => %d, db_name => %s\n",
                         backup_info->backup_level,
+                        backup_info->remove_archive,
+                        backup_info->sa_mode,
+                        backup_info->no_check,
+                        backup_info->compress,
                         backup_info->db_name);
 
         goto error;

@@ -9,9 +9,7 @@ void usage ()
 {
     printf ("./backup_tc03 [DB_NAME]\n\n");
     printf ("ex)\n");
-    printf ("backup (full)    ==> ./backup_tc03 demodb\n");
-    printf ("       (level 1) ==> ./backup_tc03 demodb\n");
-    printf ("       (level 2) ==> ./backup_tc03 demodb\n");
+    printf ("backup (full) ==> ./backup_tc03 demodb\n");
 }
 
 void pass_invalid_backup_info (void)
@@ -21,8 +19,12 @@ void pass_invalid_backup_info (void)
 
     // test #1 - invalid dbname
     // --> This is not a API error... cub_server returns error
-    backup_info.db_name = "NANANA";
-    backup_info.backup_level = 0;
+    backup_info.db_name        = "NANANA";
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
 
     if (-1 == cubrid_backup_initialize ())
     {
@@ -43,8 +45,122 @@ void pass_invalid_backup_info (void)
     cubrid_backup_finalize ();
 
     // test #2 - invalid backup_level
-    backup_info.db_name = db_name;
-    backup_info.backup_level = 1004;
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 1004;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
+
+    if (-1 == cubrid_backup_initialize ())
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    if (-1 == cubrid_backup_begin (&backup_info, &backup_handle))
+    {
+        printf ("[OK] %s\n", __func__);
+    }
+    else
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    cubrid_backup_finalize ();
+}
+
+void pass_invalid_backup_info_2 (void)
+{
+    CUBRID_BACKUP_INFO backup_info;
+    void *backup_handle = NULL;
+
+    // test #1 - invalid remove_archive
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = 7; // -1, 0, 1
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
+
+    if (-1 == cubrid_backup_initialize ())
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    if (-1 == cubrid_backup_begin (&backup_info, &backup_handle))
+    {
+        printf ("[OK] %s\n", __func__);
+    }
+    else
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    cubrid_backup_finalize ();
+
+    // test #2 - invalid sa_mode
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -20; // -1, 0, 1
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
+
+    if (-1 == cubrid_backup_initialize ())
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    if (-1 == cubrid_backup_begin (&backup_info, &backup_handle))
+    {
+        printf ("[OK] %s\n", __func__);
+    }
+    else
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    cubrid_backup_finalize ();
+
+    // test #3 - invalid no_check
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = 77; // -1, 0, 1
+    backup_info.compress       = -1;
+
+    if (-1 == cubrid_backup_initialize ())
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    if (-1 == cubrid_backup_begin (&backup_info, &backup_handle))
+    {
+        printf ("[OK] %s\n", __func__);
+    }
+    else
+    {
+        printf ("[NOK] %s\n", __func__);
+        exit (1);
+    }
+
+    cubrid_backup_finalize ();
+
+    // test #4 - invalid compress
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -99; // -1, 0, 1
 
     if (-1 == cubrid_backup_initialize ())
     {
@@ -73,8 +189,12 @@ void pass_null_backup_handle (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = db_name;
-    backup_info.backup_level = 0;
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
 
     if (-1 == cubrid_backup_initialize ())
     {
@@ -122,8 +242,12 @@ void pass_invalid_backup_handle (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = db_name;
-    backup_info.backup_level = 0;
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
 
     if (-1 == cubrid_backup_initialize ())
     {
@@ -174,8 +298,12 @@ void pass_invalid_backup_args (void)
     char backup_data_buffer[4096];
     int backup_data_size = 0;
 
-    backup_info.db_name = db_name;
-    backup_info.backup_level = 0;
+    backup_info.db_name        = db_name;
+    backup_info.backup_level   = 0;
+    backup_info.remove_archive = -1;
+    backup_info.sa_mode        = -1;
+    backup_info.no_check       = -1;
+    backup_info.compress       = -1;
 
     if (-1 == cubrid_backup_initialize ())
     {
@@ -229,6 +357,9 @@ int main (int argc, char *argv[])
 
     /* test - invalid backup arguments */
     pass_invalid_backup_info ();
+
+    /* RND-960 */
+    pass_invalid_backup_info_2 ();
 
     pass_null_backup_handle ();
     sleep(1);
