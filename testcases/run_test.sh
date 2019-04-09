@@ -34,6 +34,7 @@ echo ""
 echo "============================"
 echo "==cubrid backup api test start"
 echo ""
+
 echo "==run backup_tc01"
 ./backup_tc01 $db_name 0 ./backup_dir/${db_name}_bk0v000 > backup_tc01_result 2>&1 
 sleep 1
@@ -105,7 +106,15 @@ echo "==run restore_tc03"
 echo ""
 
 echo "==run backup_tc04"
+rm -rf $CUBRID/log/cubrid_utility.log
 ./backup_tc04 $db_name 0 -1 -1 -1 -1 ./backup_dir/${db_name}_bk0v000 > backup_tc04_result 2>&1 
+if [ `grep "0 \-l 0 testdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 1 ]; then
+        echo "[OK] set options" >> backup_tc04_result
+else
+        echo "[NOK] set options" >> backup_tc04_result
+        cat $CUBRID/log/cubrid_utility.log >> backup_tc04_result
+fi
+rm -rf $CUBRID/log/cubrid_utility.log
 
 echo ""
 cubrid server stop $db_name
@@ -123,6 +132,12 @@ fi
 sleep 1
 
 ./backup_tc04 $db_name 0 1 0 1 1 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+if [ `grep "0 \-r \-l 0 \-\-no\-check \-z testdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 1 ]; then
+        echo "[OK] set options" >> backup_tc04_result
+else
+        echo "[NOK] set options" >> backup_tc04_result
+        cat $CUBRID/log/cubrid_utility.log >> backup_tc04_result
+fi
 
 echo ""
 cubrid server stop $db_name
@@ -137,9 +152,16 @@ if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; the
 else
 	echo "[OK] run restoredb" >> backup_tc04_result
 fi
+rm -rf $CUBRID/log/cubrid_utility.log
 sleep 1
 
 ./backup_tc04 $db_name 0 1 0 0 0 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+if [ `grep "0 \-r \-l 0 testdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 1 ]; then
+        echo "[OK] set options" >> backup_tc04_result
+else
+        echo "[NOK] set options" >> backup_tc04_result
+        cat $CUBRID/log/cubrid_utility.log >> backup_tc04_result
+fi
 
 echo ""
 cubrid server stop $db_name
@@ -154,9 +176,16 @@ if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; the
 else
 	echo "[OK] run restoredb" >> backup_tc04_result
 fi
+rm -rf $CUBRID/log/cubrid_utility.log
 sleep 1
 
 ./backup_tc04 $db_name 0 0 0 1 0 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+if [ `grep "0 \-l 0 \-\-no\-check testdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 1 ]; then
+        echo "[OK] set options" >> backup_tc04_result
+else
+        echo "[NOK] set options" >> backup_tc04_result
+        cat $CUBRID/log/cubrid_utility.log >> backup_tc04_result
+fi
 
 echo ""
 cubrid server stop $db_name
@@ -171,9 +200,16 @@ if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; the
 else
 	echo "[OK] run restoredb" >> backup_tc04_result
 fi
+rm -rf $CUBRID/log/cubrid_utility.log
 sleep 1
 
 ./backup_tc04 $db_name 0 0 0 0 1 ./backup_dir/${db_name}_bk0v000 >> backup_tc04_result 2>&1 
+if [ `grep "0 \-l 0 \-z testdb" $CUBRID/log/cubrid_utility.log | wc -l` -eq 1 ]; then
+        echo "[OK] set options" >> backup_tc04_result
+else
+        echo "[NOK] set options" >> backup_tc04_result
+        cat $CUBRID/log/cubrid_utility.log >> backup_tc04_result
+fi
 
 echo ""
 cubrid server stop $db_name
@@ -188,6 +224,7 @@ if [ `cubrid server status $db_name |grep "Server $db_name" |wc -l` -eq 0 ]; the
 else
 	echo "[OK] run restoredb" >> backup_tc04_result
 fi
+rm -rf $CUBRID/log/cubrid_utility.log
 sleep 1
 
 echo ""
@@ -205,6 +242,7 @@ for i in $(seq 1 10); do
 		echo "[OK] set cubrid_backup.conf : restoredb_exe ($i)" >> conf_test_result
 	fi
 done
+
 echo ""
 echo "==cubrid backup api test end"
 echo "=========================="
