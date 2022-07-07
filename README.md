@@ -59,3 +59,66 @@ struct cubrid_restore_info
 |-|-|
 |RESTORE_TO_DB|not yet supported|
 |RESTORE_TO_FILE|restore the backup data to a file|
+## Functions
+### cubrid_backup_initialize
+<pre>
+<code>
+int cubrid_backup_initialize (void);
+</code>
+</pre>
+#### description
+API function that should be called first to use cubrid-backup-api
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+### cubrid_backup_finalize
+<pre>
+<code>
+int cubrid_backup_finalize (void);
+</code>
+</pre>
+#### description
+An API function paired with the cubrid_backup_initialize() function, called to end use of cubrid-backup-api
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+### cubrid_backup_begin
+<pre>
+<code>
+int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle);
+</code>
+</pre>
+#### description
+Called to perform backup using cubrid-backup-api. When the user inputs backup information into the CUBRID_BACKUP_INFO data structure and calls it, the backup_handle is passed
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|backup_info|in|Refer to the description of the CUBRID_BACKUP_INFO data structure|
+|backup_handle|out|A backup handle that internally identifies a backup</br></br>Used as an input argument when calling cubrid_backup_read () and cubrid_backup_end ()|
+### cubrid_backup_end
+<pre>
+<code>
+int cubrid_backup_end (void* backup_handle);
+</code>
+</pre>
+#### description
+Called to end a backup started with cubrid_backup_begin()
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|backup_handle|in|Backup handle received when calling cubrid_backup_begin()|
+### cubrid_backup_read
