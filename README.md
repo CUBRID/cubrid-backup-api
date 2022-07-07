@@ -122,3 +122,291 @@ Called to end a backup started with cubrid_backup_begin()
 |-|-|-|
 |backup_handle|in|Backup handle received when calling cubrid_backup_begin()|
 ### cubrid_backup_read
+<pre>
+<code>
+int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len);
+</code>
+</pre>
+#### description
+Call to read backup data through API
+#### return
+|value|description|
+|-|-|
+|1|Success - Need to read the rest of the backup data by calling cubrid_backup_read() again|
+|0|Success - Backup complete|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|backup_handle|in|Backup handle received when calling cubrid_backup_begin()|
+|buffer|out|User buffer to hold backup data|
+|buffer_size|in|buffer size|
+|data_len|out|Actual data size copied to buffer|
+### cubrid_restore_begin
+<pre>
+<code>
+int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_handle);
+</code>
+</pre>
+#### description
+Called to restore backed up data to DB or file
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|restore_info|in|Refer to the description of the CUBRID_RESTORE_INFO data structure|
+|restore_handle|out|restore handle that internally identifies restore</br></br>Used as an input argument when calling cubrid_restore_write () and cubrid_restore_end ()|
+### cubrid_restore_end
+<pre>
+<code>
+int cubrid_restore_end (void* restore_handle);
+</code>
+</pre>
+#### description
+Called to end the recovery started with cubrid_restore_begin()
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|restore_handle|in|The restore handle received when calling cubrid_restore_begin()|
+### cubrid_restore_write
+<pre>
+<code>
+int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, unsigned int data_len);
+</code>
+</pre>
+#### description
+Passing backed up data to API for database restore
+#### return
+|value|description|
+|-|-|
+|0|Success|
+|-1|Failure|
+#### arguments
+|name|in/out|description|
+|-|-|-|
+|restore_handle|in|The restore handle received when calling cubrid_restore_begin()|
+|backup_level|in|The backup level of the backup data it carries|
+|buffer|in|Buffer with backup data|
+|data_len|in|Actual data size in buffer|
+## API function call transition diagram
+### backup
+### restore
+## API test sample code
+### backup
+#### sample code
+<pre>
+<code>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include "cubrid_backup_api.h"
+ 
+int main ()
+{
+    CUBRID_BACKUP_INFO backup_info;
+    void* backup_handle;
+ 
+    char backup_buffer[4096];
+ 
+    unsigned int data_len;
+    unsigned int total_data_len = 0;
+ 
+    int backup_fd;
+ 
+    int retval;
+ 
+    backup_fd = open ("demodb_bk0v000", O_CREAT | O_WRONLY);
+    if (backup_fd == -1)
+    {
+        printf ("[ERROR] failed to open backup file\n");
+        return -1;
+    }
+ 
+    retval = cubrid_backup_initialize ();
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_initialize ()\n");
+        return -1;
+    }
+ 
+    backup_info.backup_level = 0;
+    backup_info.db_name = "demodb";
+ 
+    retval = cubrid_backup_begin (&backup_info, &backup_handle);
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_begin ()\n");
+        return -1;
+    }
+ 
+    while (1)
+    {
+        retval = cubrid_backup_read (backup_handle, backup_buffer, 4096, &data_len);
+ 
+        if (retval < 0)
+        {
+            printf ("[ERROR] cubrid_backup_read ()\n");
+            return -1;
+        }
+ 
+        if (data_len != 0)
+        {
+            write (backup_fd, backup_buffer, data_len);
+ 
+            total_data_len += data_len;
+        }
+ 
+        if (retval == 0) // backup end
+        {
+            break;
+        }
+    }
+ 
+    printf ("backup data size ==> %d\n", total_data_len);
+ 
+    retval = cubrid_backup_end (backup_handle);
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_end ()\n");
+        return -1;
+    }
+ 
+    retval = cubrid_backup_finalize ();
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_finalize ()\n");
+        return -1;
+    }
+ 
+    close (backup_fd);
+ 
+    return 0;
+}
+</code>
+</pre>
+#### build
+<pre>
+<code>
+gcc -o backup_sample -L. -lcubridbackupapi -lpthread backup_sample.c
+</code>
+</pre>
+### restore
+#### sample code
+<pre>
+<code>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include "cubrid_backup_api.h"
+ 
+int main ()
+{
+    CUBRID_RESTORE_INFO restore_info;
+    void* restore_handle;
+ 
+    char backup_data[4096];
+ 
+    unsigned int data_len;
+    unsigned int total_data_len = 0;
+ 
+    int backup_fd;
+ 
+    int retval;
+ 
+    backup_fd = open ("demodb_bk0v000", O_RDONLY);
+    if (backup_fd == -1)
+    {
+        printf ("[ERROR] failed to open backup file\n");
+        return -1;
+    }
+ 
+    retval = mkdir ("./restore_dir", S_IRWXU);
+    if (retval == -1)
+    {
+        printf ("[ERROR] failed to create restore directory\n");
+        return -1;
+    }
+ 
+    retval = cubrid_backup_initialize ();
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_initialize ()\n");
+        return -1;
+    }
+ 
+    restore_info.restore_type = RESTORE_TO_FILE;
+    restore_info.backup_level = 0;
+    restore_info.backup_file_path = "./restore_dir";
+    restore_info.db_name = "demodb";
+ 
+    retval = cubrid_restore_begin (&restore_info, &restore_handle);
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_restore_begin ()\n");
+        return -1;
+    }
+ 
+    do
+    {
+        data_len = read (backup_fd, backup_data, 4096);
+        if (data_len == -1)
+        {
+            printf ("[ERROR] failed to read backup file\n");
+            return -1;
+        }
+        else if (data_len == 0)
+        {
+            break;
+        }
+ 
+        retval = cubrid_restore_write (restore_handle, 0, backup_data, data_len);
+ 
+        if (retval < 0)
+        {
+            printf ("[ERROR] cubrid_restore_write ()\n");
+            return -1;
+        }
+ 
+        total_data_len += data_len;
+    } while (data_len != 0);
+ 
+    printf ("restore data size ==> %d\n", total_data_len);
+ 
+    retval = cubrid_restore_end (restore_handle);
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_restore_end ()\n");
+        return -1;
+    }
+ 
+    retval = cubrid_backup_finalize ();
+    if (retval < 0)
+    {
+        printf ("[ERROR] cubrid_backup_finalize ()\n");
+        return -1;
+    }
+ 
+    close (backup_fd);
+ 
+    return 0;
+}
+</code>
+</pre>
+#### build
+<pre>
+<code>
+gcc -o restore_sample -L. -lcubridbackupapi -lpthread restore_sample.c
+</code>
+</pre>
