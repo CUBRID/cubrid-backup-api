@@ -157,6 +157,7 @@ int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_s
 |data_len|out|actual backup data size copied to the user buffer|
 ### cubrid_restore_begin()
 * an API function called to restore backed up data to DB or a file
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_handle);
@@ -174,6 +175,7 @@ int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_hand
 |restore_handle|out|a restore handle that internally identifies restore</br></br>used as an input argument when calling cubrid_restore_write() and cubrid_restore_end()|
 ### cubrid_restore_end()
 * an API function called to terminate the restore started with cubrid_restore_begin()
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_restore_end (void* restore_handle);
@@ -189,6 +191,7 @@ int cubrid_restore_end (void* restore_handle);
 |-|-|-|
 |restore_handle|in|the restore handle received when calling cubrid_restore_begin()|
 ### cubrid_restore_write()
+#### Declaration in the header file
 * an API function passing backed up data to API for database restore
 <pre>
 <code>
