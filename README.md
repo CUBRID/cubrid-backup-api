@@ -155,68 +155,63 @@ int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_s
 |buffer|out|user buffer to save the backup data|
 |buffer_size|in|user buffer size|
 |data_len|out|actual backup data size copied to the user buffer|
-### cubrid_restore_begin
+### cubrid_restore_begin()
+* an API function called to restore backed up data to DB or a file
 <pre>
 <code>
 int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_handle);
 </code>
 </pre>
-#### description
-Called to restore backed up data to DB or file
-#### return
-|value|description|
+#### Return:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|0|success|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|restore_info|in|Refer to the description of the CUBRID_RESTORE_INFO data structure|
-|restore_handle|out|restore handle that internally identifies restore</br></br>Used as an input argument when calling cubrid_restore_write () and cubrid_restore_end ()|
-### cubrid_restore_end
-* Called to end the recovery started with cubrid_restore_begin()
+|restore_info|in|refer to the description of the CUBRID_RESTORE_INFO data structure|
+|restore_handle|out|a restore handle that internally identifies restore</br></br>used as an input argument when calling cubrid_restore_write() and cubrid_restore_end()|
+### cubrid_restore_end()
+* an API function called to terminate the restore started with cubrid_restore_begin()
 <pre>
 <code>
 int cubrid_restore_end (void* restore_handle);
 </code>
 </pre>
-#### description
-
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|0|success|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|restore_handle|in|The restore handle received when calling cubrid_restore_begin()|
-### cubrid_restore_write
+|restore_handle|in|the restore handle received when calling cubrid_restore_begin()|
+### cubrid_restore_write()
+* an API function passing backed up data to API for database restore
 <pre>
 <code>
 int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, unsigned int data_len);
 </code>
 </pre>
-#### description
-Passing backed up data to API for database restore
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|0|success|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|restore_handle|in|The restore handle received when calling cubrid_restore_begin()|
-|backup_level|in|The backup level of the backup data it carries|
-|buffer|in|Buffer with backup data|
-|data_len|in|Actual data size in buffer|
+|restore_handle|in|the restore handle received when calling cubrid_restore_begin()|
+|backup_level|in|the backup level of the backed up data to restore|
+|buffer|in|user buffer with backup data|
+|data_len|in|actual data size in the user buffer|
 ## API function call transition diagram
-### backup
-### restore
-## API test sample code
-### backup
-#### sample code
+### Backup
+### Restore
+## Sample code
+### Backup
 <pre>
 <code>
 #include <stdio.h>
@@ -308,14 +303,12 @@ int main ()
 }
 </code>
 </pre>
-#### build
 <pre>
 <code>
 gcc -o backup_sample -L. -lcubridbackupapi -lpthread backup_sample.c
 </code>
 </pre>
-### restore
-#### sample code
+### Restore
 <pre>
 <code>
 #include <stdio.h>
@@ -418,7 +411,6 @@ int main ()
 }
 </code>
 </pre>
-#### build
 <pre>
 <code>
 gcc -o restore_sample -L. -lcubridbackupapi -lpthread restore_sample.c
