@@ -172,7 +172,7 @@ int cubrid_restore_begin (CUBRID_RESTORE_INFO* restore_info, void** restore_hand
 |parameter|in/out|description|
 |-|-|-|
 |restore_info|in|refer to the description of the CUBRID_RESTORE_INFO data structure|
-|restore_handle|out|a restore handle that internally identifies restore</br></br>used as an input argument when calling cubrid_restore_write() and cubrid_restore_end()|
+|restore_handle|out|a restore handle that internally identifies restore</br>used as an input argument when calling cubrid_restore_write() and cubrid_restore_end()|
 ### cubrid_restore_end()
 * an API function called to terminate the restore started with cubrid_restore_begin()
 #### Declaration in the header file
