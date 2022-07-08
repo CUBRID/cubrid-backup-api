@@ -212,7 +212,9 @@ int cubrid_restore_write (void* restore_handle, int backup_level, void* buffer, 
 |data_len|in|actual data size in the user buffer|
 ## API function call transition diagram
 ### Backup
+![backup](https://cubrid-wiki.atlassian.net/wiki/download/thumbnails/229703681/%EA%B7%B8%EB%A6%BC1.png?version=1&modificationDate=1536662949758&cacheVersion=1&api=v2&width=375&height=400)
 ### Restore
+![restore](https://cubrid-wiki.atlassian.net/wiki/download/thumbnails/229703681/%EA%B7%B8%EB%A6%BC2.png?version=1&modificationDate=1536662902581&cacheVersion=1&api=v2&width=375&height=400)
 ## Sample code
 ### Backup
 <pre>
