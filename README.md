@@ -25,11 +25,11 @@ struct cubrid_backup_info
 #### Description of struct members
 |members|description|
 |-|-|
-|backup_level|the backup level supported by cubrid backup</br>&nbsp;&nbsp;0 - full backup</br>&nbsp;&nbsp;1 - first incremental backup</br>&nbsp;&nbsp;2 - second incremental backup|
-|remove_archive|Whether to remove archive log volumes that will not be used anymore in subsequent backups after the current one is complete</br>&nbsp;&nbsp;0 - do not delete (default)</br>&nbsp;&nbsp;1 - delete|
-|sa_mode|Whether to perform backup in stand-alone mode</br>&nbsp;&nbsp;0 - client/server mode; on-line backup (default)</br>&nbsp;&nbsp;1 - stand-alone mode; off-line backup|
-|no_check|Whether to perform a consistency check</br>&nbsp;&nbsp;0 - do consistency check (default)</br>&nbsp;&nbsp;1 - no consistency check|
-|compress|Whether to perform data compression when backup</br>&nbsp;&nbsp;0 - no compression (default)</br>&nbsp;&nbsp;1 - do compression|
+|backup_level|the backup level supported by cubrid</br>&nbsp;&nbsp;0 - full backup</br>&nbsp;&nbsp;1 - first incremental backup</br>&nbsp;&nbsp;2 - second incremental backup|
+|remove_archive|remove archive log volumes that will no longer be used by subsequent backups after the current backup is complete</br>&nbsp;&nbsp;0 - no delete (default)</br>&nbsp;&nbsp;1 - delete|
+|sa_mode|the backup execution mode supported by cubrid</br>&nbsp;&nbsp;0 - on-line backup; client/server mode (default)</br>&nbsp;&nbsp;1 - off-line backup; stand-alone mode|
+|no_check|perform a consistency check to the backup data</br>&nbsp;&nbsp;0 - consistency check (default)</br>&nbsp;&nbsp;1 - no consistency check|
+|compress|perform data compression to the backup data</br>&nbsp;&nbsp;0 - no compression (default)</br>&nbsp;&nbsp;1 - compression|
 |db_name|target database name to backup|
 ### CUBRID_RESTORE_INFO
 * This is a struct to can set restore information required to perform cubrid restore
@@ -60,7 +60,12 @@ struct cubrid_restore_info
 #### [Declaration in the header file]
 <pre>
 <code>
-A
+typedef enum restore_type RESTORE_TYPE;
+enum restore_type
+{
+    RESTORE_TO_DB,
+    RESTORE_TO_FILE
+};
 </code>
 </pre>
 #### Description of struct members
