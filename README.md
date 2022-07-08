@@ -5,8 +5,7 @@
   * libcubridbackupapi.so
 ## Structures
 ### CUBRID_BACKUP_INFO
-* A struct that can set required information when requesting a cubrid backup
-  * Target database name to backup and backup level, etc
+* A structure that can set required information when requesting a cubrid backup
 #### Declaration in the header file
 <pre>
 <code>
@@ -32,8 +31,7 @@ struct cubrid_backup_info
 |compress|perform data compression to the backup data</br>&nbsp;&nbsp;0 - no compression (default)</br>&nbsp;&nbsp;1 - compression|
 |db_name|target database name to backup|
 ### CUBRID_RESTORE_INFO
-* This is a struct to can set restore information required to perform cubrid restore
-* The target database name to restore or the backup level, etc can be set by this
+* A structure that can set required information when requesting a cubrid restore
 #### Declaration in the header file
 <pre>
 <code>
@@ -49,15 +47,16 @@ struct cubrid_restore_info
 </code>
 </pre>
 #### Description of struct members
-|member variable|description|
+|members|description|
 |-|-|
-|restore_type|Specify the restore type</br>&nbsp;&nbsp;RESTORE_TO_DB - not yet supported</br>&nbsp;&nbsp;RESTORE_TO_FILE - Create a backup volume under the path specified by the backup_file_path option|
-|backup_level|The backup level of the backup volume used for restore|
+|restore_type|the restore type</br>&nbsp;&nbsp;RESTORE_TO_DB - not yet supported</br>&nbsp;&nbsp;RESTORE_TO_FILE - generate a backup volume under the path specified by the backup_file_path option|
+|backup_level|the backup level of the backup volume used for restore|
 |up_to_date|not yet supported|
-|backup_file_path|The directory path to save the backup volume when the restore_type option is set to the RESTORE_TO_FILE|
+|backup_file_path|the directory path to generate a backup volume when the restore_type option is set to the RESTORE_TO_FILE|
 |db_name|target database name to restore|
 ### RESTORE_TYPE
-#### [Declaration in the header file]
+* An enumaration used to set the restore type in CUBRID_RESTORE_INFO structure 
+#### Declaration in the header file
 <pre>
 <code>
 typedef enum restore_type RESTORE_TYPE;
@@ -68,8 +67,8 @@ enum restore_type
 };
 </code>
 </pre>
-#### Description of struct members
-|type|description|
+#### Description of enum members
+|members|description|
 |-|-|
 |RESTORE_TO_DB|not yet supported|
 |RESTORE_TO_FILE|restore the backup data to a file|
