@@ -55,7 +55,7 @@ struct cubrid_restore_info
 |backup_file_path|the directory path to generate a backup volume when the restore_type option is set to the RESTORE_TO_FILE|
 |db_name|target database name to restore|
 ### RESTORE_TYPE
-* an enumaration used to set the restore type in CUBRID_RESTORE_INFO structure 
+* an enumeration used to set the restore type in CUBRID_RESTORE_INFO structure 
 #### Declaration in the header file
 <pre>
 <code>
