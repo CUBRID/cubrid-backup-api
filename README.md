@@ -1,11 +1,11 @@
 ## Overview
 * C interfaces to interwork with 3rd party backup solutions
-* A header file and a shared library are provided. The name of the files are as followings:
+* a header file and a shared library are provided. The name of the files are as followings:
   * cubrid_backup_api.h
   * libcubridbackupapi.so
 ## Structures
 ### CUBRID_BACKUP_INFO
-* A structure that can set required information when requesting a cubrid backup
+* a structure that can set required information when requesting a cubrid backup
 #### Declaration in the header file
 <pre>
 <code>
@@ -22,7 +22,7 @@ struct cubrid_backup_info
 </code>
 </pre>
 #### Description of struct members
-|members|description|
+|member|description|
 |-|-|
 |backup_level|the backup level supported by cubrid</br>&nbsp;&nbsp;0 - full backup</br>&nbsp;&nbsp;1 - first incremental backup</br>&nbsp;&nbsp;2 - second incremental backup|
 |remove_archive|remove archive log volumes that will no longer be used by subsequent backups after the current backup is complete</br>&nbsp;&nbsp;0 - no delete (default)</br>&nbsp;&nbsp;1 - delete|
@@ -31,7 +31,7 @@ struct cubrid_backup_info
 |compress|perform data compression to the backup data</br>&nbsp;&nbsp;0 - no compression (default)</br>&nbsp;&nbsp;1 - compression|
 |db_name|target database name to backup|
 ### CUBRID_RESTORE_INFO
-* A structure that can set required information when requesting a cubrid restore
+* a structure that can set required information when requesting a cubrid restore
 #### Declaration in the header file
 <pre>
 <code>
@@ -47,7 +47,7 @@ struct cubrid_restore_info
 </code>
 </pre>
 #### Description of struct members
-|members|description|
+|member|description|
 |-|-|
 |restore_type|the restore type</br>&nbsp;&nbsp;RESTORE_TO_DB - not yet supported</br>&nbsp;&nbsp;RESTORE_TO_FILE - generate a backup volume under the path specified by the backup_file_path option|
 |backup_level|the backup level of the backup volume used for restore|
@@ -55,7 +55,7 @@ struct cubrid_restore_info
 |backup_file_path|the directory path to generate a backup volume when the restore_type option is set to the RESTORE_TO_FILE|
 |db_name|target database name to restore|
 ### RESTORE_TYPE
-* An enumaration used to set the restore type in CUBRID_RESTORE_INFO structure 
+* an enumaration used to set the restore type in CUBRID_RESTORE_INFO structure 
 #### Declaration in the header file
 <pre>
 <code>
@@ -68,93 +68,93 @@ enum restore_type
 </code>
 </pre>
 #### Description of enum members
-|members|description|
+|member|description|
 |-|-|
 |RESTORE_TO_DB|not yet supported|
 |RESTORE_TO_FILE|restore the backup data to a file|
 ## Functions
-### cubrid_backup_initialize
+### cubrid_backup_initialize()
+* an API function that should be called first to use cubrid-backup-api
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_backup_initialize (void);
 </code>
 </pre>
-#### description
-API function that should be called first to use cubrid-backup-api
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-### cubrid_backup_finalize
+|0|success|
+|-1|failure|
+### cubrid_backup_finalize()
+* an API function paired with the cubrid_backup_initialize() function. it is called to terminate the use of cubrid-backup-api
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_backup_finalize (void);
 </code>
 </pre>
-#### description
-An API function paired with the cubrid_backup_initialize() function, called to end use of cubrid-backup-api
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-### cubrid_backup_begin
+|0|success|
+|-1|failure|
+### cubrid_backup_begin()
+* an API function called to perform backup using cubrid-backup-api
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle);
 </code>
 </pre>
-#### description
-Called to perform backup using cubrid-backup-api. When the user inputs backup information into the CUBRID_BACKUP_INFO data structure and calls it, the backup_handle is passed
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|0|success|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|backup_info|in|Refer to the description of the CUBRID_BACKUP_INFO data structure|
-|backup_handle|out|A backup handle that internally identifies a backup</br></br>Used as an input argument when calling cubrid_backup_read () and cubrid_backup_end ()|
-### cubrid_backup_end
+|backup_info|in|refer to the description of the CUBRID_BACKUP_INFO data structure|
+|backup_handle|out|a backup handle that internally identifies a backup</br></br>used as an input argument when calling cubrid_backup_read() and cubrid_backup_end()|
+### cubrid_backup_end()
+* an API function called to end a backup started with cubrid_backup_begin()
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_backup_end (void* backup_handle);
 </code>
 </pre>
-#### description
-Called to end a backup started with cubrid_backup_begin()
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|0|Success|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|0|success|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|backup_handle|in|Backup handle received when calling cubrid_backup_begin()|
-### cubrid_backup_read
+|backup_handle|in|the backup handle received when calling cubrid_backup_begin()|
+### cubrid_backup_read()
+* an API function called to read backup data
+#### Declaration in the header file
 <pre>
 <code>
 int cubrid_backup_read (void* backup_handle, void* buffer, unsigned int buffer_size, unsigned int* data_len);
 </code>
 </pre>
-#### description
-Call to read backup data through API
-#### return
-|value|description|
+#### Returns:
+|return|description|
 |-|-|
-|1|Success - Need to read the rest of the backup data by calling cubrid_backup_read() again|
-|0|Success - Backup complete|
-|-1|Failure|
-#### arguments
-|name|in/out|description|
+|1|success</br>&nbsp;- need to read the rest of the backup data by calling cubrid_backup_read() again|
+|0|success</br>&nbsp;- backup complete|
+|-1|failure|
+#### Parameters:
+|parameter|in/out|description|
 |-|-|-|
-|backup_handle|in|Backup handle received when calling cubrid_backup_begin()|
-|buffer|out|User buffer to hold backup data|
-|buffer_size|in|buffer size|
-|data_len|out|Actual data size copied to buffer|
+|backup_handle|in|the backup handle received when calling cubrid_backup_begin()|
+|buffer|out|user buffer to save the backup data|
+|buffer_size|in|user buffer size|
+|data_len|out|actual backup data size copied to the user buffer|
 ### cubrid_restore_begin
 <pre>
 <code>
@@ -174,13 +174,14 @@ Called to restore backed up data to DB or file
 |restore_info|in|Refer to the description of the CUBRID_RESTORE_INFO data structure|
 |restore_handle|out|restore handle that internally identifies restore</br></br>Used as an input argument when calling cubrid_restore_write () and cubrid_restore_end ()|
 ### cubrid_restore_end
+* Called to end the recovery started with cubrid_restore_begin()
 <pre>
 <code>
 int cubrid_restore_end (void* restore_handle);
 </code>
 </pre>
 #### description
-Called to end the recovery started with cubrid_restore_begin()
+
 #### return
 |value|description|
 |-|-|
