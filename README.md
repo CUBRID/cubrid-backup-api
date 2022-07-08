@@ -116,7 +116,7 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle);
 |parameter|in/out|description|
 |-|-|-|
 |backup_info|in|refer to the description of the CUBRID_BACKUP_INFO data structure|
-|backup_handle|out|a backup handle that internally identifies a backup</br></br>used as an input argument when calling cubrid_backup_read() and cubrid_backup_end()|
+|backup_handle|out|a backup handle that internally identifies a backup</br>used as an input argument when calling cubrid_backup_read() and cubrid_backup_end()|
 ### cubrid_backup_end()
 * an API function called to end a backup started with cubrid_backup_begin()
 #### Declaration in the header file
