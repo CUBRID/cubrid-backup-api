@@ -66,19 +66,12 @@ CUBRID의 기본 백업 도구인 `cubrid backupdb`는 백업 이미지를 디�
 
 백업 데이터는 CUBRID 서버(`cub_server`)에서 named pipe를 거쳐 애플리케이션으로 흘러 나옵니다. 이때 각 구성 요소가 맡는 역할이 서로 다르므로, 먼저 그 역할을 구분해서 볼 필요가 있습니다.
 
-```mermaid
-flowchart TB
-    App["application code (3rd party 백업 프로그램)"]
-    API["libcubridbackupapi.so<br/>(cubrid_backup.conf 읽음)"]
-    BK["cubrid backupdb (CUBRID 유틸리티)<br/>서버에 백업 요청만 전달"]
-    SVR["cub_server 백업 스레드<br/>(logpb_backup)"]
-    FIFO["named pipe (FIFO)<br/>$CUBRID/tmp/.cubrid_backup/&lt;db&gt;_bk&lt;level&gt;v000"]
-    App -->|"cubrid_backup_begin() / _read() / _end()"| API
-    API -->|"① fork + execv"| BK
-    BK -->|"② 백업 요청 (FIFO 경로 전달)"| SVR
-    SVR -->|"③ 백업 데이터 쓰기"| FIFO
-    FIFO -->|"④ cubrid_backup_read() 로 읽기"| App
-```
+백업 데이터가 흐르는 경로는 다음과 같습니다.
+
+1. 애플리케이션이 `cubrid_backup_begin()`을 호출하면, `libcubridbackupapi.so`가 named pipe를 만들고 `cubrid backupdb`를 `fork + execv`로 실행합니다.
+2. `cubrid backupdb`는 `cub_server`에 named pipe 경로를 전달해 백업을 요청합니다(요청 전달로 역할 종료).
+3. `cub_server` 백업 스레드가 백업 데이터를 named pipe(`$CUBRID/tmp/.cubrid_backup/<db>_bk<level>v000`)에 씁니다.
+4. 애플리케이션이 `cubrid_backup_read()`로 그 데이터를 읽어 갑니다.
 
 역할을 정리하면 다음과 같습니다.
 
@@ -97,9 +90,9 @@ flowchart TB
 
 ```
  1. cubrid_backup_initialize()
-      cubrid_backup.conf 읽기 및 검증
       API 진단 로그 파일($CUBRID/log/cubrid_backup.log) 열기
       임시 작업 디렉터리 준비
+      cubrid_backup.conf 읽기 및 검증
 
  2. cubrid_backup_begin()
       named pipe 생성 ──────► $CUBRID/tmp/.cubrid_backup/<db>_bk<level>v000
@@ -121,7 +114,7 @@ flowchart TB
       반환값 0: 백업 완료
 
  6. cubrid_backup_end()
-      drain 스레드 정지·회수, cubrid backupdb 프로세스 회수, named pipe 삭제
+      cubrid backupdb 프로세스 회수, drain 스레드 회수, named pipe 삭제
 
  7. cubrid_backup_finalize()
       임시 작업 디렉터리 정리, API 진단 로그 파일 닫기
@@ -141,16 +134,13 @@ flowchart TB
 
 이를 완화하기 위해 API 내부에 계층형 버퍼를 둡니다. drain 스레드가 파이프를 상시 비워 주므로 서버 백업 스레드는 대기 없이 진행하고, 소비자의 지연은 API 내부 버퍼가 흡수합니다.
 
-```mermaid
-flowchart TB
-    SVR["cub_server 백업 스레드"] -->|"write()"| FIFO["FIFO (fifo_size)"]
-    FIFO -->|"drain 스레드가 상시 비움"| MEM["메모리 링 (buffer_memory_size)<br/>오래된 데이터"]
-    MEM -->|"메모리가 가득 차면 넘김"| DISK["디스크 스풀 (buffer_disk_limit)<br/>최신 데이터"]
-    MEM -->|"오래된 데이터 먼저"| READ["cubrid_backup_read()"]
-    DISK -->|"그다음 최신 데이터"| READ
-```
+drain 스레드가 named pipe를 상시 비워 다음 순서로 버퍼에 쌓고, 소비자는 오래된 데이터부터 받습니다.
 
-*메모리 → 디스크 순서로 꺼내므로 데이터 순서는 항상 보존됩니다.*
+1. `cub_server`가 named pipe(FIFO, `fifo_size`)에 백업 데이터를 씁니다.
+2. drain 스레드가 FIFO를 비워 **메모리 링**(`buffer_memory_size`)에 적재합니다 — 오래된 데이터.
+3. 메모리 링이 가득 차면 **디스크 스풀**(`buffer_disk_limit`)로 넘깁니다 — 최신 데이터.
+4. `cubrid_backup_read()`는 메모리(오래된) → 디스크(최신) 순으로 꺼내므로 데이터 순서가 항상 보존됩니다.
+
 
 동작 모드는 설정값에 따라 세 가지로 나뉩니다.
 
@@ -222,7 +212,7 @@ partial_recovery=false
 | 항목 | `키 = 값` 형식입니다. `=` 앞뒤 공백은 허용됩니다. |
 | 키 문자 | 영문자와 `_`만 사용할 수 있습니다. 대소문자를 구분하지 않습니다. |
 | 값 문자 | 영숫자와 `/`, `.`, `_`, `-` 만 사용할 수 있습니다. **공백이나 그 밖의 특수 문자는 사용할 수 없습니다.** |
-| 주석 | `#`으로 시작하는 줄은 주석으로 취급되어 무시됩니다. 설정 항목을 잠시 비활성화하려면 `#thread_count=8` 처럼 줄 앞에 `#`을 붙이면 됩니다. |
+| 주석 | 줄 맨 앞에 `#`을 붙이면 그 줄은 무시됩니다(예: `#thread_count=8`로 항목을 잠시 비활성화). 전용 주석 문법이 따로 있는 것은 아니며, `키 = 값` 형식에 맞지 않는 줄이 무시되는 것입니다. **인라인 주석은 지원하지 않습니다.** `thread_count=8  # 메모`처럼 값 뒤에 텍스트를 붙이면 줄 전체가 조용히 무시되어 해당 항목이 기본값으로 남습니다. |
 | 빈 줄 | 무시됩니다. |
 | 불리언 값 | `true`, `false`, `1`, `0` (대소문자 무시) |
 | 크기 값 | 숫자 뒤에 `KB`, `MB`, `GB` 를 붙일 수 있습니다(1024 기준, 대소문자 무시). 접미사를 생략하면 바이트입니다. |
@@ -659,113 +649,40 @@ int cubrid_restore_end (void* restore_handle);
 
 ### 6.1 백업 — 호출 시퀀스
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant App as 3rd party 프로그램
-    participant API as libcubridbackupapi.so
-    participant Drain as drain 스레드
-    participant BK as cubrid backupdb
-    participant SVR as cub_server 백업 스레드
-
-    App->>API: cubrid_backup_initialize()
-    Note over API: cubrid_backup.conf 읽기 및 검증<br/>진단 로그 파일 열기, 작업 디렉터리 준비
-    API-->>App: 0
-
-    App->>API: cubrid_backup_begin(backup_info, &handle)
-    Note over API: named pipe 생성 및 읽기 측 open<br/>파이프 버퍼 크기 = fifo_size
-    API->>BK: fork + execv (cubrid backupdb -D named_pipe ...)
-    API->>Drain: drain 스레드 시작 (버퍼링 사용 시)
-    API-->>App: 0, handle
-
-    BK->>SVR: 백업 요청 (named pipe 경로 전달)
-    Note over BK: 요청 전달로 역할 종료
-    loop 백업이 진행되는 동안
-        SVR->>Drain: named pipe 에 백업 데이터 write
-        Note over Drain: 메모리 링에 적재<br/>가득 차면 디스크 스풀로 넘김
-    end
-
-    loop 반환값이 1인 동안
-        App->>API: cubrid_backup_read(handle, buf, size, &len)
-        API->>Drain: 버퍼에서 오래된 순서로 꺼내기
-        API-->>App: 1, len (데이터 더 있음)
-        App->>App: 받은 데이터를 저장 매체로 전송
-    end
-
-    Note over SVR: 백업 완료
-    App->>API: cubrid_backup_read(handle, buf, size, &len)
-    API-->>App: 0 (백업 완료)
-
-    App->>API: cubrid_backup_end(handle)
-    Note over API: drain 스레드 정지·회수<br/>backupdb 프로세스 회수, named pipe 삭제
-    API-->>App: 0
-
-    App->>API: cubrid_backup_finalize()
-    API-->>App: 0
-```
+1. `cubrid_backup_initialize()` — 진단 로그 열기, 작업 디렉터리 준비, `cubrid_backup.conf` 읽기·검증. 반환 `0`.
+2. `cubrid_backup_begin(backup_info, &handle)` — named pipe 생성·읽기 측 open(파이프 버퍼 = `fifo_size`), `cubrid backupdb`를 `fork + execv`로 실행, 버퍼링 사용 시 drain 스레드 시작. 반환 `0`과 `handle`.
+3. `cubrid backupdb`가 `cub_server`에 named pipe 경로를 전달해 백업을 요청합니다.
+4. `cub_server` 백업 스레드가 named pipe에 백업 데이터를 쓰고, drain 스레드가 이를 상시 읽어 메모리 링·디스크 스풀에 적재합니다.
+5. `cubrid_backup_read(handle, buf, size, &len)`을 반복 호출합니다. 반환값이 `1`이면 데이터가 더 있으므로 `len`바이트를 저장 매체로 보낸 뒤 다시 호출합니다.
+6. 반환값이 `0`이면 백업이 완료된 것입니다.
+7. `cubrid_backup_end(handle)` — `cubrid backupdb` 회수, drain 스레드 회수, named pipe 삭제. 반환 `0`.
+8. `cubrid_backup_finalize()` — 작업 디렉터리 정리, 진단 로그 닫기. 반환 `0`.
 
 ### 6.2 복구 — 호출 시퀀스
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant App as 3rd party 프로그램
-    participant API as libcubridbackupapi.so
-    participant FS as 백업 볼륨 파일
-    participant UTIL as cubrid restoredb
-
-    App->>API: cubrid_backup_initialize()
-    API-->>App: 0
-
-    App->>API: cubrid_restore_begin(restore_info, &handle)
-    API->>FS: &lt;path&gt;/&lt;db&gt;_bk&lt;level&gt;v000 생성
-    API-->>App: 0, handle
-
-    loop 백업 데이터를 모두 전달할 때까지
-        App->>App: 저장 매체에서 백업 데이터 읽기
-        App->>API: cubrid_restore_write(handle, level, buf, len)
-        API->>FS: 파일에 순서대로 기록
-        API-->>App: 0
-    end
-
-    App->>API: cubrid_restore_end(handle)
-    API->>FS: 파일 닫기
-    API-->>App: 0
-
-    App->>API: cubrid_backup_finalize()
-    API-->>App: 0
-
-    Note over App,UTIL: API의 역할은 여기까지입니다
-    App->>UTIL: cubrid restoredb -B &lt;dir&gt; -l &lt;level&gt; &lt;db_name&gt;
-    UTIL-->>App: 데이터베이스 복구 완료
-```
+1. `cubrid_backup_initialize()`. 반환 `0`.
+2. `cubrid_restore_begin(restore_info, &handle)` — `<path>/<db>_bk<level>v000` 파일을 생성합니다. 반환 `0`과 `handle`.
+3. 저장 매체에서 백업 데이터를 백업 때 읽은 순서 그대로 읽어 `cubrid_restore_write(handle, level, buf, len)`을 반복 호출합니다. API가 파일에 순서대로 기록하며, 각 호출은 `0`을 반환합니다.
+4. `cubrid_restore_end(handle)` — 파일을 닫습니다. 반환 `0`.
+5. `cubrid_backup_finalize()`. 반환 `0`.
+6. 여기까지가 API의 역할입니다. 재구성된 백업 볼륨 파일로 실제 데이터베이스를 복구하려면 CUBRID 명령을 사용합니다: `cubrid restoredb -B <dir> -l <level> <db_name>`.
 
 ### 6.3 내부 상태 전이
 
 API는 하나의 내부 상태를 가지며, 호출 순서가 이 상태와 맞지 않으면 함수가 `-1`을 반환합니다.
 
-```mermaid
-stateDiagram-v2
-    [*] --> NOT_READY
-    NOT_READY --> READY : cubrid_backup_initialize()
-    READY --> BACKUP : cubrid_backup_begin()
-    BACKUP --> READY : cubrid_backup_end()
-    READY --> RESTORE : cubrid_restore_begin()
-    RESTORE --> READY : cubrid_restore_end()
-    READY --> NOT_READY : cubrid_backup_finalize()
-    BACKUP --> NOT_READY : cubrid_backup_finalize()
-    RESTORE --> NOT_READY : cubrid_backup_finalize()
+초기 상태는 `NOT_READY`이며, 상태 전이는 다음과 같습니다.
 
-    note right of BACKUP
-        cubrid_backup_read() 는
-        이 상태에서만 호출할 수 있습니다
-    end note
+| 현재 상태 | 호출 | 다음 상태 |
+|---|---|---|
+| `NOT_READY` | `cubrid_backup_initialize()` | `READY` |
+| `READY` | `cubrid_backup_begin()` | `BACKUP` |
+| `BACKUP` | `cubrid_backup_end()` | `READY` |
+| `READY` | `cubrid_restore_begin()` | `RESTORE` |
+| `RESTORE` | `cubrid_restore_end()` | `READY` |
+| `READY` · `BACKUP` · `RESTORE` | `cubrid_backup_finalize()` | `NOT_READY` |
 
-    note right of RESTORE
-        cubrid_restore_write() 는
-        이 상태에서만 호출할 수 있습니다
-    end note
-```
+`cubrid_backup_read()`는 `BACKUP` 상태에서만, `cubrid_restore_write()`는 `RESTORE` 상태에서만 호출할 수 있습니다.
 
 ### 6.4 반복 구조 의사 코드
 
