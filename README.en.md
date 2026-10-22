@@ -97,8 +97,8 @@ Restore runs in the opposite direction. The application hands its stored backup 
  2. cubrid_backup_begin()
       Create the named pipe ──► $CUBRID/tmp/.cubrid_backup/<db>_bk<level>v000
       Open its read end and size the pipe buffer (fifo_size)
-      Launch cubrid backupdb (fork + execv)
       If configured, allocate the memory ring and disk spool, then start the drain thread
+      Launch cubrid backupdb (fork + execv)
 
  3. cubrid backupdb ──► cub_server
       Requests a backup, passing the named pipe path created in step 2.
@@ -185,7 +185,7 @@ Step 6 belongs to the CUBRID utility, not to the API. The current version does n
 
 ### 3.1 File location and syntax
 
-The configuration file path is fixed at **`$CUBRID/conf/cubrid_backup.conf`**. The file is optional: if it does not exist, every setting takes its default value.
+The configuration file path is fixed at **`$CUBRID/conf/cubrid_backup.conf`**. The file is optional: if it does not exist, every setting takes its default value. If the file exists but cannot be read (for example, for lack of permission), or its path is too long, `cubrid_backup_initialize()` fails.
 
 ```ini
 [backup]
@@ -208,16 +208,17 @@ The syntax rules are as follows.
 
 | Rule | Detail |
 |---|---|
-| Sections | Only `[backup]` and `[restore]` are recognised. Case-insensitive. |
+| Sections | `[backup]` and `[restore]` are recognised. Case-insensitive (`[BACKUP]` is the same). Any other name (e.g. `[foo]`) is logged as a warning, and every entry in that section is ignored until the next `[backup]` or `[restore]` header. |
+| Line length | A line may hold up to 1023 characters, not counting the line terminator. A longer line causes `cubrid_backup_initialize()` to fail. |
 | Entries | `key = value`. Whitespace around `=` is allowed. |
 | Key characters | Letters and `_` only. Case-insensitive. |
 | Value characters | Alphanumerics and `/`, `.`, `_`, `-` only. **Spaces and other special characters are not allowed.** |
 | Comments | Prefixing a line with `#` makes that line ignored (e.g. `#thread_count=8` to disable an entry temporarily). There is no dedicated comment syntax — a line is simply ignored when it does not match `key = value`. **Inline comments are not supported.** Appending text after a value, as in `thread_count=8  # note`, makes the whole line silently ignored, so the entry stays at its default. |
 | Blank lines | Ignored. |
 | Boolean values | `true`, `false`, `1`, `0` (case-insensitive). |
-| Size values | A number optionally followed by `KB`, `MB`, or `GB` (1024-based, case-insensitive). Without a suffix the value is in bytes. |
+| Size values | A number optionally followed by a unit: `B`, `K`/`KB`, `M`/`MB`, `G`/`GB`, `T`/`TB`, or `P`/`PB` (1024-based, case-insensitive). Without a unit the value is in bytes. Decimals such as `1.5G` are accepted; any fraction of a byte is dropped. Units and decimal forms are the same as for CUBRID's own size parameters. A unit with no number (`MB`), a negative sign (`-1`), or an undefined unit causes `cubrid_backup_initialize()` to fail. |
 
-> **Caution** An unrecognised (but well-formed) key, an entry that appears before any section header, or a value of the wrong type causes `cubrid_backup_initialize()` to fail. A value containing disallowed characters, or a line that does not parse as `key = value`, is silently ignored and its default is kept — so a typo can slip through unnoticed.
+> **Caution** An unrecognised (but well-formed) key, an entry that appears before any section header, or a value of the wrong type causes `cubrid_backup_initialize()` to fail (entries inside an unknown section are ignored without being checked). The reason is written to `$CUBRID/log/cubrid_backup.log` together with the key, the value, and the line number. A value containing disallowed characters, or a line that does not parse as `key = value`, is silently ignored and its default is kept — so a typo can slip through unnoticed.
 
 ### 3.2 [backup] — backup behaviour
 
@@ -230,7 +231,7 @@ These settings are passed through to `cubrid backupdb` as command-line options.
 | `no_check` | boolean | `false` | When `true`, the consistency check on the backup data is skipped, which shortens backup time. |
 | `thread_count` | integer | `0` | Number of parallel threads used for the backup. `0` omits the option and lets the CUBRID server decide. |
 | `compress` | boolean | `false` | When `true`, backup data is compressed with LZ4; when `false`, it is not compressed. |
-| `except_active_log` | boolean | `false` | When `true`, the active log is excluded from the backup. |
+| `except_active_log` | boolean | `false` | When `true`, the `--except-active-log` option is passed. However, CUBRID's `cubrid backupdb` treats this option as obsolete, so it **has no effect**: the active log is always included in the backup. |
 | `sleep_msecs` | integer | `0` | Milliseconds to sleep between reads during the backup, used to reduce server load. `0` omits the option. |
 
 > **Note** `cubrid backupdb` compresses when given no compression option. This library therefore passes `--no-compress` explicitly when `compress=false`, so the configured value and the actual behaviour always agree.
@@ -239,10 +240,10 @@ These settings are passed through to `cubrid backupdb` as command-line options.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `fifo_size` | size | `64KB` | Kernel buffer size of the named pipe that carries the backup data. Values outside `64KB`–`1MB` are adjusted into range with a warning. `1MB` is recommended so that one write from the server's backup thread fits in a single pipe. |
+| `fifo_size` | size | `64KB` | Kernel buffer size of the named pipe that carries the backup data. It must be at least `64KB`; a smaller value makes initialization fail. A value above the operating system's pipe size limit (`/proc/sys/fs/pipe-max-size`, `1MB` by default) is lowered to that limit with a warning (if the file cannot be read, the limit is taken to be `1MB`; if the limit is set below `64KB`, `64KB` is used). `2GB` or more is outside the integer range, so initialization fails. `1MB` is recommended so that one write from the server's backup thread fits in a single pipe. |
 | `buffer_memory_size` | size | `0` | Size of the memory ring buffer. **`0` disables buffering.** A non-zero value must be at least the I/O unit, otherwise initialization fails. |
-| `buffer_disk_limit` | size | `0` | Reserved size of the disk spool file. `0` disables the disk tier. Setting it above `0` requires `buffer_memory_size` to be greater than `0`. |
-| `buffer_disk_path` | path | (empty) | Directory in which the disk spool file is created. Required when `buffer_disk_limit > 0`; the directory must exist and be readable, writable, and executable. |
+| `buffer_disk_limit` | size | `0` | Reserved size of the disk spool file. `0` disables the disk tier. Setting it above `0` requires `buffer_memory_size` to be greater than `0`, and the value must be at least the larger of `fifo_size` (after adjustment) and the I/O unit. Otherwise initialization fails. |
+| `buffer_disk_path` | path | (empty) | Directory in which the disk spool file is created. Required when `buffer_disk_limit > 0`; it must be an **absolute path** (a relative path makes initialization fail), and the directory must exist and be readable, writable, and executable. |
 | `buffer_disk_keep_spool` | boolean | `false` | With the default `false`, the spool file is unlinked immediately after creation, so its space is reclaimed automatically when the backup ends or the process terminates abnormally. `true` keeps the file for debugging. |
 
 The **I/O unit** is the granularity the API reads and writes with: the block size of the file system holding the temporary working directory, multiplied by 8. On a typical Linux file system this is 4 KB × 8 = **32 KB**.
@@ -251,8 +252,8 @@ The **I/O unit** is the granularity the API reads and writes with: the block siz
 
 - Set `buffer_memory_size` to the amount of data you need to absorb while the consumer is temporarily slow. 64 MB is a reasonable starting point.
 - Set `buffer_disk_limit` large enough to hold the **entire log portion** that follows the data volumes (archive logs, log info, and active log). If it is too small, the backup will wait during the log phase and the benefit of buffering is reduced.
-- `buffer_disk_limit` should be larger than `fifo_size`. If the reserve cannot hold even one pipe's worth of data, the disk tier acts only as plain overflow.
-- If free space in the spool directory is below `buffer_disk_limit`, a warning is logged but initialization continues.
+- If `buffer_disk_limit` is smaller than the larger of `fifo_size` and the I/O unit, initialization fails. The kernel may size the actual pipe buffer above `fifo_size`; if the reserve is smaller than that actual size, after `cubrid_backup_begin()` a warning is logged, log-phase boundary detection is turned off, and the disk tier acts only as plain overflow.
+- If free space in the spool directory is below `buffer_disk_limit`, initialization only logs a warning. If the space is still short at `cubrid_backup_begin()`, the spool cannot be reserved and `cubrid_backup_begin()` fails (see [3.6](#36-behaviour-on-invalid-configuration)).
 
 ### 3.4 [restore] — restore settings
 
@@ -305,18 +306,37 @@ Where each setting can be specified:
 
 ### 3.6 Behaviour on invalid configuration
 
+A setting with wrong syntax, form, or range is treated as a failure, and a value is adjusted only to fit an operating system limit (`fifo_size`). If a configured resource cannot be secured, the call fails instead of turning the feature off and continuing. This is how CUBRID itself handles `cubrid.conf`.
+
 | Condition | Behaviour |
 |---|---|
-| `fifo_size` below `64KB` | Warning, raised to `64KB`, continues |
-| `fifo_size` above `1MB` | Warning, clamped to `1MB`, continues |
-| Free space in the spool directory is below `buffer_disk_limit` | Warning, continues |
+| The configuration file exists but cannot be read, or its path is too long | `cubrid_backup_initialize()` fails |
+| A line longer than 1023 characters | `cubrid_backup_initialize()` fails |
+| Unknown section (e.g. `[foo]`) | Warning; entries in that section are ignored until the next `[backup]` or `[restore]` header |
+| Unrecognised (but well-formed) key, entry outside a section, or wrong-type value (including a size with no number such as `MB`, or an undefined unit) | `cubrid_backup_initialize()` fails |
+| `fifo_size` below `64KB` | `cubrid_backup_initialize()` fails |
+| `fifo_size` above `/proc/sys/fs/pipe-max-size` | Warning, lowered to `pipe-max-size` (not below `64KB`), continues |
+| `fifo_size` of `2GB` or more (outside the integer range) | `cubrid_backup_initialize()` fails |
 | `buffer_memory_size` is non-zero but below the I/O unit | `cubrid_backup_initialize()` fails |
 | `buffer_disk_limit > 0` while `buffer_memory_size = 0` | `cubrid_backup_initialize()` fails |
-| `buffer_disk_path` is missing or inaccessible | `cubrid_backup_initialize()` fails |
-| Unrecognised (but well-formed) key, entry outside a section, or wrong-type value | `cubrid_backup_initialize()` fails |
+| `buffer_disk_limit > 0` but below `max(fifo_size, I/O unit)` | `cubrid_backup_initialize()` fails |
+| `buffer_disk_limit` is at least `max(fifo_size, I/O unit)` but smaller than the pipe buffer the kernel actually allocated (the kernel may round `fifo_size` up) | Warning after `cubrid_backup_begin()`; log-phase boundary detection is turned off and the disk tier is used only as plain overflow; the backup continues |
+| `buffer_disk_limit > 0` and `buffer_disk_path` is missing, relative, or inaccessible | `cubrid_backup_initialize()` fails |
+| Free space in the spool directory is below `buffer_disk_limit` | Warning at initialization, continues. If the reserve fails at `cubrid_backup_begin()`, `cubrid_backup_begin()` fails |
+| `$CUBRID/tmp` is unusable and `CUBRID_TMP` is a relative path | `cubrid_backup_initialize()` fails (see [9.3](#93-temporary-working-directory)) |
+| A configured resource cannot be secured at `cubrid_backup_begin()` (list below) | `cubrid_backup_begin()` fails |
 | Value with disallowed characters, or a line not in `key = value` form | Silently ignored, default kept |
 
-> **Caution** The conditions that fail immediately do so to avoid discovering a configuration mistake halfway through a backup. Always check the return value of `cubrid_backup_initialize()` after changing the configuration.
+`cubrid_backup_begin()` secures all of the following resources before it launches `cubrid backupdb`, and returns `-1` if any of them fails. In that case `cubrid backupdb` is not launched, and the named pipe, spool file, buffers, and threads created so far are all released (the spool file is removed even with `buffer_disk_keep_spool=true`). `cubrid_backup_begin()` can be called again in the same process, and the reason is written to `$CUBRID/log/cubrid_backup.log` as an `ERROR`.
+
+- With `buffer_memory_size > 0`: the pipe buffer cannot be set to `fifo_size` (for example when the per-user pipe buffer limit `/proc/sys/fs/pipe-user-pages-soft` is exceeded), allocating the memory ring, creating the drain thread's internal resource (an event fd), or creating the drain thread fails.
+- With `buffer_disk_limit > 0`: the spool file path is too long, the spool file cannot be created, `buffer_disk_limit` bytes cannot be reserved (including a lack of free space), or the disk tier's work buffer or the log-phase detection buffer cannot be allocated.
+
+When buffering is off (`buffer_memory_size=0`) and the pipe buffer cannot be set to `fifo_size`, a warning is logged and the backup continues with the pipe size the kernel chose, as in earlier versions.
+
+By contrast, when log-phase boundary detection is turned off because of the content of the backup stream (see [10. Limitations](#10-limitations)), or because the reserve is smaller than the actual pipe buffer (table above), a warning is logged and the backup continues.
+
+> **Caution** The conditions that fail immediately do so to avoid discovering a configuration mistake halfway through a backup. Always check the return values of `cubrid_backup_initialize()` and `cubrid_backup_begin()` after changing the configuration.
 
 ---
 
@@ -508,7 +528,7 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle);
 | Value | Description |
 |---|---|
 | `0` | Success |
-| `-1` | Failure — a value in `backup_info` is out of range, another backup is already in progress, or creating the named pipe or launching `cubrid backupdb` failed. |
+| `-1` | Failure — a value in `backup_info` is out of range, another backup is already in progress, creating the named pipe or launching `cubrid backupdb` failed, or setting the pipe buffer size or securing the tiered-buffer resources failed (see [3.6](#36-behaviour-on-invalid-configuration)). |
 
 > **Note** Success means the backup has started. Errors raised on the CUBRID server side — an incorrect database name, for example — surface later as `-1` from `cubrid_backup_read()`.
 
@@ -650,7 +670,7 @@ Where section 2 illustrates the concepts, this section shows **which functions t
 ### 6.1 Backup — call sequence
 
 1. `cubrid_backup_initialize()` — open the diagnostic log, prepare the working directory, read/validate `cubrid_backup.conf`. Returns `0`.
-2. `cubrid_backup_begin(backup_info, &handle)` — create the named pipe and open its read end (pipe buffer = `fifo_size`), launch `cubrid backupdb` via `fork + execv`, and start the drain thread when buffering is on. Returns `0` and `handle`.
+2. `cubrid_backup_begin(backup_info, &handle)` — create the named pipe and open its read end (pipe buffer = `fifo_size`), secure the buffers and start the drain thread when buffering is on, and launch `cubrid backupdb` via `fork + execv`. Returns `0` and `handle`.
 3. `cubrid backupdb` passes the named pipe path to `cub_server` and requests a backup.
 4. The `cub_server` backup thread writes backup data to the named pipe; the drain thread reads it continuously into the memory ring and disk spool.
 5. Call `cubrid_backup_read(handle, buf, size, &len)` repeatedly. While it returns `1`, more data remains — send `len` bytes to the storage medium and call again.
@@ -1141,6 +1161,7 @@ cubrid-backup-api/
     ├── backup_tc01 ~ 05.c     backup test clients
     ├── restore_tc01 ~ 03.c    restore test clients
     ├── parser_ut.c            log-phase parser and buffer unit tests (no server needed)
+    ├── conf_ut.c              configuration parsing and validation unit tests (no server needed)
     ├── backup_dir/            test output directory
     ├── restore_dir/           test output directory
     └── stress/                large-scale / real-environment suites (opt-in)
@@ -1186,6 +1207,7 @@ What each test covers:
 | `restore_tc02` | Out-of-order calls on the restore API |
 | `restore_tc03` | Invalid arguments on the restore API |
 | `parser_ut` | Unit tests for the log-phase parser and the buffers. Uses synthetic data, so no CUBRID server is required. |
+| `conf_ut` | Unit tests for `cubrid_backup.conf` parsing and the validation rules ([3.6](#36-behaviour-on-invalid-configuration)). Runs in a private `$CUBRID`, so no CUBRID server is required. |
 | `conf_test` | Each configuration key is reflected correctly in the `cubrid backupdb` command line |
 
 The unit tests can be run on their own; they are the quickest check because no server is involved.
@@ -1193,6 +1215,7 @@ The unit tests can be run on their own; they are the quickest check because no s
 ```sh
 cd testcases
 ./parser_ut ; echo "exit=$?"      # 0 means every check passed
+./conf_ut ; echo "exit=$?"        # 0 means every check passed
 ```
 
 ### 8.3 Large-scale and real-environment suites
@@ -1245,8 +1268,8 @@ When a backup that used the tiered buffer finishes, a one-line summary is writte
 
 | Symptom | Cause and action |
 |---|---|
-| `cubrid_backup_initialize()` returns `-1` | The `CUBRID` environment variable is not set; there is no write permission on `$CUBRID/log` or the temporary working directory; or the configuration file contains an invalid entry. Check for typos in `cubrid_backup.conf` key names first. |
-| `cubrid_backup_begin()` returns `-1` | A member of `CUBRID_BACKUP_INFO` was left uninitialized or is out of range. Confirm that options meant to come from the configuration file are set to `-1`. The call also fails when a backup is already in progress in the same process. |
+| `cubrid_backup_initialize()` returns `-1` | The `CUBRID` environment variable is not set; there is no write permission on `$CUBRID/log` or the temporary working directory; or the configuration file contains an invalid entry. Check for typos in `cubrid_backup.conf` key names first. For a line-level configuration error, the line number, key, and value are written to `$CUBRID/log/cubrid_backup.log` (see [3.6](#36-behaviour-on-invalid-configuration)). |
+| `cubrid_backup_begin()` returns `-1` | A member of `CUBRID_BACKUP_INFO` was left uninitialized or is out of range. Confirm that options meant to come from the configuration file are set to `-1`. The call also fails when a backup is already in progress in the same process, and when the pipe buffer size or a tiered-buffer resource (memory ring, spool space, and so on) cannot be secured; the reason is then written to `$CUBRID/log/cubrid_backup.log` as an `ERROR` (see [3.6](#36-behaviour-on-invalid-configuration)). |
 | `cubrid_backup_begin()` succeeds but the first `cubrid_backup_read()` returns `-1` | The error came from the CUBRID server. Check that the database name is correct, that the server is running (online backup) or stopped (`sa_mode=1`), and that `db_name` does not name a remote host. The cause is recorded in `$CUBRID/log/cubrid_utility.log`. |
 | The backup appears to stall for a long time | The buffer is probably full because the consumer is not taking data. Confirm that `cubrid_backup_read()` is still being called, and use `wait_count` from the buffer summary to decide whether to raise `buffer_memory_size` and `buffer_disk_limit`. |
 | `cubrid restoredb` fails on a restored backup file | Confirm that the data was passed to `cubrid_restore_write()` in the same order it was read, with no missing chunks. Data from a backup whose `cubrid_backup_read()` returned `-1` cannot be used. |
@@ -1258,8 +1281,10 @@ When a backup that used the tiered buffer finishes, a one-line summary is writte
 The API looks for a temporary working directory in the following order and creates a `.cubrid_backup` directory inside it, where the named pipe is created.
 
 1. `$CUBRID/tmp`
-2. `$CUBRID_TMP` (if the variable is set and the directory is accessible)
+2. `$CUBRID_TMP` (if the variable is set and the directory is accessible; an empty value counts as unset, and a relative path makes `cubrid_backup_initialize()` fail)
 3. `/tmp`
+
+The directory actually in use (`<chosen directory>/.cubrid_backup`) is written to `$CUBRID/log/cubrid_backup.log` as `INFO: backup working directory: <path>`.
 
 The named pipe is called `<db_name>_bk<backup_level>v000` and is removed by `cubrid_backup_end()`.
 

@@ -11,7 +11,8 @@
 # speed, so "kill at 3MB consumed" hit an already-exited producer (vacuous pass /
 # false NOK). v2 kills the instant the target process appears and ASSERTS the
 # injection actually landed. E5 split per code design: conf-time invalid path is
-# FAIL-FAST (validate_dir at conf load), runtime spool failure is DEGRADE.
+# FAIL-FAST (validate_dir at conf load), runtime spool failure FAILS BEGIN
+# (APIS-1102 #7: a configured resource that cannot be secured fails begin).
 # Each case starts from a verified-healthy DB.
 set -u
 # ---- portable environment ----
@@ -167,15 +168,16 @@ if [ "$WRC" = "124" ]; then nok "E5a HUNG"; elif [ "$WRC" -ne 0 ] && grep -q '\[
 else nok "E5a rc=$WRC out=$(tail -1 $W/bk/e5a.out)"; fi
 csql -u dba -c "SELECT 1" $DB >/dev/null 2>&1 && ok "E5a server untouched" || nok "E5a server broken"
 
-R "=== E5b: RUNTIME spool reserve failure (100GB on 63G tmpfs) — degrade memory-only ==="
+R "=== E5b: RUNTIME spool reserve failure (100GB on 63G tmpfs) — begin fails, nothing left behind ==="
 ensure_db; mkdir -p /tmp/errt2_spool; wconf 100GB /tmp/errt2_spool
 : > $LOG 2>/dev/null
 $W/tc05 $DB 0 $W/bk/e5b 1000 65536 > $W/bk/e5b.out 2>&1 & wait_to $! 300
-grep -q 'spool setup failed' $LOG && ok "E5b degraded to memory-only (runtime warning logged)" || nok "E5b no degrade warning"
-[ "$WRC" -eq 0 ] && grep -q '\[OK\]' $W/bk/e5b.out && ok "E5b backup completed memory-only" || nok "E5b failed (rc=$WRC)"
-mkdir -p $W/d5; cp $W/bk/e5b $W/d5/${DB}_bk0v000
-H5=$(restore_and_hash $W/d5)
-[ "$H5" = "$H_SRC" ] && ok "E5b restore hash matches source" || nok "E5b hash mismatch"
+grep -q 'cannot reserve buffer_disk_limit' $LOG && ok "E5b spool reserve failure logged as ERROR" || nok "E5b no reserve error logged"
+if [ "$WRC" = "124" ]; then nok "E5b HUNG"; elif [ "$WRC" -ne 0 ] && grep -q 'cubrid_backup_begin' $W/bk/e5b.out; then
+  ok "E5b cubrid_backup_begin failed (rc=$WRC)"
+else nok "E5b rc=$WRC out=$(tail -1 $W/bk/e5b.out)"; fi
+[ -z "$(ls -A /tmp/errt2_spool 2>/dev/null)" ] && ok "E5b no spool file left" || nok "E5b spool file left behind"
+csql -u dba -c "SELECT 1" $DB >/dev/null 2>&1 && ok "E5b server untouched" || nok "E5b server broken"
 rm -rf /tmp/errt2_spool
 
 R "=== E6: early cubrid_backup_end mid-stream + handle reuse (healthy server) ==="

@@ -237,12 +237,14 @@ echo ""
 # == [LIGHT] tiered-buffer / log-phase parser tests ==========================
 # Fast, deterministic additions for the feature/log-phase-parser work. At this
 # 100M `testdb` scale parser_ut is ~instant and backup_tc05 adds ~1 min (it
-# deliberately reads slowly). Both use the same [OK]/[NOK] *_result convention as
+# deliberately reads slowly). All use the same [OK]/[NOK] *_result convention as
 # the cases above, so the final summary picks them up. Each is wrapped in a
 # `timeout` so a hang in the slow-consumer path fails loudly instead of stalling
 # the whole gate.
 #   - parser_ut   : deterministic unit tests for the observational log-phase
 #                   parser + memory ring (synthetic streams, NO server needed).
+#   - conf_ut     : cubrid_backup.conf parsing/validation unit tests (NO server
+#                   needed).
 #   - backup_tc05 : slow consumer drives the tiered buffer (mem -> disk spool ->
 #                   WAIT); the produced backup must still restore byte-for-byte.
 # Heavy / real-environment suites (5GB/150GB accuracy, LOG_CS latency, fault
@@ -262,6 +264,18 @@ else
 fi
 
 echo ""
+echo "==run conf_ut (cubrid_backup.conf parsing/validation unit tests, no server)"
+timeout 60 ./conf_ut > conf_ut_result 2>&1
+cut_rc=$?
+if [ $cut_rc -eq 124 ]; then
+	echo "[NOK] conf_ut timed out" >> conf_ut_result
+elif [ $cut_rc -eq 0 ]; then
+	echo "[OK] conf_ut (all checks passed)" >> conf_ut_result
+else
+	echo "[NOK] conf_ut (a check failed)" >> conf_ut_result
+fi
+
+echo ""
 echo "==run backup_tc05 (slow-consumer tiered buffer -> byte-identical restore)"
 mkdir -p ./spool
 cat > $CUBRID/conf/cubrid_backup.conf <<EOF
@@ -274,7 +288,7 @@ compress=true
 fifo_size=64KB
 buffer_memory_size=1MB
 buffer_disk_limit=64MB
-buffer_disk_path=./spool
+buffer_disk_path=$(pwd)/spool
 buffer_disk_keep_spool=false
 EOF
 rm -rf ./backup_dir/* ./restore_dir/* ./spool/*
@@ -321,7 +335,7 @@ cubrid deletedb $db_name
 rm -rf ${db_name}_bkvinf ./backup_dir/* ./restore_dir/* $CUBRID/log/*
 
 # verdict guards: a missing result file or a truncated run must not read as PASS
-EXPECTED_RESULTS="backup_tc01 backup_tc02 backup_tc03 backup_tc04 backup_tc05 restore_tc01 restore_tc02 restore_tc03 conf_test parser_ut"
+EXPECTED_RESULTS="backup_tc01 backup_tc02 backup_tc03 backup_tc04 backup_tc05 restore_tc01 restore_tc02 restore_tc03 conf_test parser_ut conf_ut"
 for e in $EXPECTED_RESULTS; do
 	if [ ! -s "${e}_result" ]; then
 		echo "[NOK] missing or empty ${e}_result" >> harness_result

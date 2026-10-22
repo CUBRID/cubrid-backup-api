@@ -72,12 +72,16 @@ struct backup_handle
     size_t mem_tail;
 
     int       disk_fd;        /* spool file (Phase 2); -1 = unused */
+    char      spool_path[PATH_MAX]; /* spool file path, set by create_spool_file () */
     long long disk_cap;
     long long disk_len;
     long long disk_head;
     long long disk_tail;
 
-    bool producer_eof;        /* drain: FIFO reached normal EOF */
+    char*  scratch_buf;       /* drain disk-tier staging, malloc'd in begin_backup; NULL = unused */
+    size_t scratch_cap;       /* max(io_size, pipe capacity)                                       */
+
+    bool producer_eof;       /* drain: FIFO reached normal EOF */
     bool buf_error;           /* buffered path error/cancel */
 
     pthread_t       drain_thread;

@@ -4,6 +4,8 @@
 #include <time.h>
 #include <sys/timeb.h>
 #include <errno.h>
+#include <ctype.h>
+#include <locale.h>
 #include <assert.h>
 #include <pthread.h>
 #include <sys/statvfs.h>
@@ -14,6 +16,9 @@
 #ifndef LLONG_MAX
 #define LLONG_MAX 9223372036854775807LL
 #endif
+
+#define FIFO_SIZE_MIN         (64 * 1024)   /* default pipe capacity */
+#define FIFO_SIZE_DEFAULT_MAX (1024 * 1024) /* default pipe-max-size */
 
 #define LOG_HEADER_MAX_SIZE  (50)
 #define LOG_MESSAGE_MAX_SIZE (LOG_HEADER_MAX_SIZE + 1024)
@@ -287,8 +292,21 @@ int make_backup_home (void)
         /* (2) $CUBRID_TMP */
         const char *cubrid_tmp = getenv ("CUBRID_TMP");
 
+        /* an empty CUBRID_TMP is treated as unset, as before */
+        if (cubrid_tmp != NULL && cubrid_tmp[0] == '\0')
+        {
+            cubrid_tmp = NULL;
+        }
+
         if (cubrid_tmp != NULL)
         {
+            /* a relative CUBRID_TMP would resolve against the caller's cwd */
+            if (cubrid_tmp[0] != '/')
+            {
+                PRINT_LOG_ERR ("CUBRID_TMP must be an absolute path: '%s'\n", cubrid_tmp);
+                goto error;
+            }
+
             snprintf (backup_path, PATH_MAX, "%s", cubrid_tmp);
             remove_trailing_slash (backup_path);
         }
@@ -322,6 +340,8 @@ int make_backup_home (void)
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
+
+    PRINT_LOG_INFO ("backup working directory: %s\n", backup_mgr->backup_home);
 
     if (IS_FAILURE (mkdir (backup_mgr->backup_home, S_IRWXU)))
     {
@@ -396,7 +416,7 @@ int init_default_backup_option (void)
     backup_opt->except_active_log  = false; /* [M] */
     backup_opt->sleep_msecs        = 0;     /* [M] */
 
-    backup_opt->fifo_size              = 64 * 1024;          /* 64KB               */
+    backup_opt->fifo_size              = FIFO_SIZE_MIN;      /* 64KB               */
     backup_opt->buffer_memory_size     = 0;                  /* buffering OFF (opt-in): set >0 to enable the drain/tiered-buffer path */
     backup_opt->buffer_disk_limit      = 0;                  /* disk tier off      */
     backup_opt->buffer_disk_path[0]    = '\0';
@@ -471,6 +491,7 @@ int set_int_value (int* dest, char* src)
         }
     }
 
+    errno = 0;
     long_val = strtol (src, NULL, 10);
 
     if (errno == ERANGE || long_val > INT_MAX)
@@ -488,50 +509,132 @@ error:
     return FAILURE;
 }
 
+/* Size value: [<digits>][.<digits>][unit] with at least one digit, unit one
+ * of B, K/KB, M/MB, G/GB, T/TB, P/PB (case-insensitive, 1024-based), e.g.
+ * 64KB, 1.5G, .5G, 1.G. Mirrors the units and decimal forms CUBRID accepts
+ * for its own size parameters; a sign, hex, exponent, inf/nan (which CUBRID's
+ * strtod would also take), a missing number or an overflow is rejected.
+ * A fractional byte count is truncated. Integers stay exact (CUBRID rounds
+ * through a double above 2^53). */
 static
 int set_size_value (long long* dest, char* src)
 {
-    char* endp;
-    long long val, factor = 1;
+    static const struct
+    {
+        const char* unit;
+        long long factor;
+    } units[] =
+    {
+        { "B",  1LL },
+        { "K",  1LL << 10 }, { "KB", 1LL << 10 },
+        { "M",  1LL << 20 }, { "MB", 1LL << 20 },
+        { "G",  1LL << 30 }, { "GB", 1LL << 30 },
+        { "T",  1LL << 40 }, { "TB", 1LL << 40 },
+        { "P",  1LL << 50 }, { "PB", 1LL << 50 },
+    };
 
-    errno = 0;
-    val = strtoll (src, &endp, 10);
+    char* p = src;
+    char* frac_start = NULL;
+    long long int_part = 0;
+    long long factor = 1;
+    int n_digits = 0;
+    int i;
 
-    if (errno == ERANGE || val < 0)
+    for (; isdigit ((unsigned char) *p); p++, n_digits++)
+    {
+        if (int_part > (LLONG_MAX - (*p - '0')) / 10)
+        {
+            PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+
+        int_part = int_part * 10 + (*p - '0');
+    }
+
+    if (*p == '.')
+    {
+        frac_start = p;
+        p++;
+
+        while (isdigit ((unsigned char) *p))
+        {
+            p++;
+            n_digits++;
+        }
+    }
+
+    /* either side of the point may be empty (.5G, 1.G), but not both */
+    if (n_digits == 0)
     {
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
 
-    /* optional binary (1024-based) size suffix */
-    if (*endp != '\0')
+    if (*p != '\0')
     {
-        if (IS_ZERO (strncasecmp (endp, "KB", 3)))
+        for (i = 0; i < (int) (sizeof (units) / sizeof (units[0])); i++)
         {
-            factor = 1024LL;
+            if (IS_ZERO (strcasecmp (p, units[i].unit)))
+            {
+                factor = units[i].factor;
+                break;
+            }
         }
-        else if (IS_ZERO (strncasecmp (endp, "MB", 3)))
-        {
-            factor = 1024LL * 1024;
-        }
-        else if (IS_ZERO (strncasecmp (endp, "GB", 3)))
-        {
-            factor = 1024LL * 1024 * 1024;
-        }
-        else
+
+        if (i == (int) (sizeof (units) / sizeof (units[0])))
         {
             PRINT_LOG_ERR (ERR_INFO);
             goto error;
         }
     }
 
-    if (val > LLONG_MAX / factor)   /* suffix-multiply overflow guard */
+    if (frac_start != NULL)
+    {
+        /* Same arithmetic as CUBRID (util_size_string_to_byte): strtod of the
+         * number times the unit factor, truncated. The "C" locale keeps '.' as
+         * the decimal point whatever the host's LC_NUMERIC is. */
+        char num_str[1024];   /* a value cannot exceed one conf line */
+        size_t num_len = (size_t) (p - src);
+        locale_t c_locale;
+        double val;
+
+        if (num_len >= sizeof (num_str))
+        {
+            PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+
+        memcpy (num_str, src, num_len);
+        num_str[num_len] = '\0';
+
+        c_locale = newlocale (LC_NUMERIC_MASK, "C", (locale_t) 0);
+        if (c_locale == (locale_t) 0)
+        {
+            PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+
+        val = strtod_l (num_str, NULL, c_locale) * (double) factor;
+        freelocale (c_locale);
+
+        if (!(val < 9223372036854775808.0))   /* 2^63: overflow guard */
+        {
+            PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+
+        *dest = (long long) val;
+
+        return SUCCESS;
+    }
+
+    if (int_part > LLONG_MAX / factor)   /* unit-multiply overflow guard */
     {
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
     }
 
-    *dest = val * factor;
+    *dest = int_part * factor;
 
     return SUCCESS;
 
@@ -625,9 +728,16 @@ int set_backup_option (char* key, char* value)
     }
     else if (IS_ZERO (strncasecmp (key, "fifo_size", 10)))
     {
-        if (IS_FAILURE (set_size_value (&sz, value)) || sz > INT_MAX)
+        if (IS_FAILURE (set_size_value (&sz, value)))
         {
             PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+
+        /* fifo_size is an int (as is the F_SETPIPE_SZ argument): out of type range, not clamped */
+        if (sz > INT_MAX)
+        {
+            PRINT_LOG_ERR ("cubrid_backup.conf: fifo_size=%s exceeds the int range (max %d)\n", value, INT_MAX);
             goto error;
         }
 
@@ -717,7 +827,8 @@ error:
 static
 int compile_regex (regex_t* re_opt_header, regex_t* re_opt, regex_t* re_empty_line)
 {
-    char* regex_header     = "^[[:blank:]]*\\[[[:blank:]]*(backup|restore)[[:blank:]]*\\][[:space:]]*$";
+    /* any [name]; the section name is classified by the caller */
+    char* regex_header     = "^[[:blank:]]*\\[[[:blank:]]*([^][:blank:]]+)[[:blank:]]*\\][[:space:]]*$";
     char* regex_key_value  = "^[[:blank:]]*([_[:alpha:]]+)[[:blank:]]*=[[:blank:]]*([[:alnum:]/._-]+)[[:space:]]*$";
     char* regex_empty_line = "^[[:space:]]*$";
 
@@ -766,6 +877,8 @@ int read_option (FILE* conf_fp)
     regmatch_t match[3];
 
     char line_str[1024];
+    int line_no = 0;
+    long line_pos;
 
     char* key;
     char* value;
@@ -774,6 +887,7 @@ int read_option (FILE* conf_fp)
     {
         BACKUP_OPTION_READ_STATE,
         RESTORE_OPTION_READ_STATE,
+        UNKNOWN_SECTION_READ_STATE,
         NO_READ_STATE
     };
 
@@ -789,8 +903,43 @@ int read_option (FILE* conf_fp)
 
     state = 1;
 
-    while (NULL != fgets (line_str, 1024, conf_fp))
+    for (line_pos = ftell (conf_fp);
+         NULL != fgets (line_str, sizeof (line_str), conf_fp);
+         line_pos = ftell (conf_fp))
     {
+        size_t line_len = strlen (line_str);
+        long next_pos = ftell (conf_fp);
+
+        line_no++;
+
+        /* fgets does not stop at a NUL byte, so strlen would hide the rest of
+         * the chunk (and defeat the length check below); reject such lines. */
+        if (line_pos >= 0 && next_pos >= 0 && (size_t) (next_pos - line_pos) != line_len)
+        {
+            PRINT_LOG_ERR ("cubrid_backup.conf:%d: line contains a NUL byte\n", line_no);
+            goto error;
+        }
+
+        /* A chunk without '\n' is either the unterminated last line or a line
+         * longer than the buffer; the latter is rejected instead of letting
+         * its tail be parsed as the next line. */
+        if (line_len == sizeof (line_str) - 1 && line_str[line_len - 1] != '\n')
+        {
+            int c = getc (conf_fp);
+
+            if (c == '\r')
+            {
+                c = getc (conf_fp);   /* CRLF terminator: '\r' is not line content */
+            }
+
+            if (c != EOF && c != '\n')
+            {
+                PRINT_LOG_ERR ("cubrid_backup.conf:%d: line longer than %d characters\n",
+                               line_no, (int) sizeof (line_str) - 1);
+                goto error;
+            }
+        }
+
         /* empty string */
         if (IS_SUCCESS (regexec (&re_empty_line, line_str, 3, match, 0)))
         {
@@ -800,20 +949,27 @@ int read_option (FILE* conf_fp)
         /* [header] */
         if (IS_SUCCESS (regexec (&re_opt_header, line_str, 3, match, 0)))
         {
-            /* [backup] */
-            if (line_str[match[1].rm_so] == 'b')
+            char* section = &line_str[match[1].rm_so];
+            line_str[match[1].rm_eo] = '\0';
+
+            if (IS_ZERO (strcasecmp (section, "backup")))
             {
                 read_state = BACKUP_OPTION_READ_STATE;
-
-                continue;
             }
-            /* [restore] */
-            else if (line_str[match[1].rm_so] == 'r')
+            else if (IS_ZERO (strcasecmp (section, "restore")))
             {
                 read_state = RESTORE_OPTION_READ_STATE;
-
-                continue;
             }
+            else
+            {
+                /* keys up to the next known header belong to this section */
+                read_state = UNKNOWN_SECTION_READ_STATE;
+
+                PRINT_LOG_WARN ("cubrid_backup.conf:%d: unknown section [%s]; ignoring its keys\n",
+                                line_no, section);
+            }
+
+            continue;
         }
 
         /* key = value */
@@ -829,7 +985,8 @@ int read_option (FILE* conf_fp)
             {
                 if (IS_FAILURE (set_backup_option (key, value)))
                 {
-                    PRINT_LOG_ERR (ERR_INFO);
+                    PRINT_LOG_ERR ("cubrid_backup.conf:%d: invalid [backup] option: %s=%s\n",
+                                   line_no, key, value);
                     goto error;
                 }
             }
@@ -837,16 +994,28 @@ int read_option (FILE* conf_fp)
             {
                 if (IS_FAILURE (set_restore_option (key, value)))
                 {
-                    PRINT_LOG_ERR (ERR_INFO);
+                    PRINT_LOG_ERR ("cubrid_backup.conf:%d: invalid [restore] option: %s=%s\n",
+                                   line_no, key, value);
                     goto error;
                 }
             }
+            else if (read_state == UNKNOWN_SECTION_READ_STATE)
+            {
+                continue;
+            }
             else
             {
-                PRINT_LOG_ERR (ERR_INFO);
+                PRINT_LOG_ERR ("cubrid_backup.conf:%d: option outside of any section: %s=%s\n",
+                               line_no, key, value);
                 goto error;
             }
         }
+    }
+
+    if (ferror (conf_fp))
+    {
+        PRINT_LOG_ERR ("cubrid_backup.conf: read error after line %d: %s\n", line_no, strerror (errno));
+        goto error;
     }
 
     free_regex (&re_opt_header, &re_opt, &re_empty_line);
@@ -877,17 +1046,24 @@ int read_conf_file (void)
     init_default_backup_option ();
     init_default_restore_option ();
 
-    snprintf (conf_file, PATH_MAX, "%s/conf/cubrid_backup.conf", backup_mgr->cubrid_home);
-
-    if (IS_FAILURE (check_path_length_limit (conf_file)))
+    if (snprintf (conf_file, PATH_MAX, "%s/conf/cubrid_backup.conf", backup_mgr->cubrid_home) >= PATH_MAX ||
+        IS_FAILURE (check_path_length_limit (conf_file)))
     {
-        goto end;
+        PRINT_LOG_ERR ("cubrid_backup.conf path is too long (CUBRID=%s)\n", backup_mgr->cubrid_home);
+        goto error;
     }
 
     conf_fp = fopen (conf_file, "r");
     if (conf_fp == NULL)
     {
-        goto end;
+        /* no conf file: all defaults */
+        if (errno == ENOENT)
+        {
+            goto end;
+        }
+
+        PRINT_LOG_ERR ("cannot open %s: %s\n", conf_file, strerror (errno));
+        goto error;
     }
 
     state = 1;
@@ -937,24 +1113,65 @@ error:
     return FAILURE;
 }
 
+/* Linux pipe capacity limit for unprivileged F_SETPIPE_SZ; 1MB (the kernel
+ * default) when /proc/sys/fs/pipe-max-size cannot be read. */
+static
+int read_pipe_max_size (void)
+{
+    FILE* fp;
+    long val = 0;
+
+    fp = fopen ("/proc/sys/fs/pipe-max-size", "r");
+    if (fp != NULL)
+    {
+        if (fscanf (fp, "%ld", &val) != 1)
+        {
+            val = 0;
+        }
+
+        fclose (fp);
+    }
+
+    if (val <= 0)
+    {
+        PRINT_LOG_WARN ("cannot read /proc/sys/fs/pipe-max-size; assuming %d\n", FIFO_SIZE_DEFAULT_MAX);
+        return FIFO_SIZE_DEFAULT_MAX;
+    }
+
+    /* the kernel allows up to 2^31; fifo_size is an int */
+    return (val > INT_MAX) ? INT_MAX : (int) val;
+}
+
 static
 int validate_backup_option (void)
 {
     BACKUP_OPTION* backup_opt;
+    long long min_disk_limit;
+    int pipe_max;
+    int fifo_max;
 
     backup_opt = &backup_mgr->default_backup_option;
 
-    /* fifo_size: clamp to [64KB, 1MB] (Linux default pipe-max-size). Non-fatal. */
-    if (backup_opt->fifo_size < 64 * 1024)
+    /* fifo_size: below 64KB is a configuration error; above the OS pipe limit
+     * (pipe-max-size) it is lowered to that limit. */
+    if (backup_opt->fifo_size < FIFO_SIZE_MIN)
     {
-        PRINT_LOG_WARN ("fifo_size below 64KB; raising to 64KB\n");
-        backup_opt->fifo_size = 64 * 1024;
+        PRINT_LOG_ERR ("cubrid_backup.conf: fifo_size=%d is below the minimum %d (64KB)\n",
+                       backup_opt->fifo_size, FIFO_SIZE_MIN);
+        goto error;
     }
 
-    if (backup_opt->fifo_size > 1024 * 1024)
+    pipe_max = read_pipe_max_size ();
+
+    /* never lower fifo_size below the 64KB minimum, even if pipe-max-size is
+     * configured smaller */
+    fifo_max = (pipe_max < FIFO_SIZE_MIN) ? FIFO_SIZE_MIN : pipe_max;
+
+    if (backup_opt->fifo_size > fifo_max)
     {
-        PRINT_LOG_WARN ("fifo_size above 1MB; clamping to 1MB\n");
-        backup_opt->fifo_size = 1024 * 1024;
+        PRINT_LOG_WARN ("fifo_size=%d exceeds pipe-max-size=%d; clamping to %d\n",
+                        backup_opt->fifo_size, pipe_max, fifo_max);
+        backup_opt->fifo_size = fifo_max;
     }
 
     /* memory tier must hold at least one io_size chunk when enabled */
@@ -976,13 +1193,33 @@ int validate_backup_option (void)
             goto error;
         }
 
+        /* a relative spool dir would resolve against the caller's cwd; the
+         * path is unused (and not checked) when the disk tier is off */
+        if (backup_opt->buffer_disk_path[0] != '\0' && backup_opt->buffer_disk_path[0] != '/')
+        {
+            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_path must be an absolute path: '%s'\n",
+                           backup_opt->buffer_disk_path);
+            goto error;
+        }
+
         if (IS_FAILURE (validate_dir (backup_opt->buffer_disk_path)))
         {
             PRINT_LOG_ERR (ERR_INFO);
             goto error;
         }
 
-        /* free-space shortfall is a warning, not a failure (runtime ENOSPC degrades) */
+        /* the spool must hold at least one pipe-full / one io_size chunk */
+        min_disk_limit = (backup_opt->fifo_size > backup_mgr->io_size)
+                       ? backup_opt->fifo_size : backup_mgr->io_size;
+
+        if (backup_opt->buffer_disk_limit < min_disk_limit)
+        {
+            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_limit=%lld is below max(fifo_size, io_size)=%lld\n",
+                           backup_opt->buffer_disk_limit, min_disk_limit);
+            goto error;
+        }
+
+        /* free-space shortfall is a warning, not a failure (an unreservable spool fails cubrid_backup_begin) */
         if (statvfs (backup_opt->buffer_disk_path, &vfs) == 0)
         {
             long long avail = (long long) vfs.f_bavail * (long long) vfs.f_frsize;
