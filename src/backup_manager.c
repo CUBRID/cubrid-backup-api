@@ -482,6 +482,12 @@ int set_int_value (int* dest, char* src)
     int i;
     long long_val;
 
+    if (src[0] == '\0')
+    {
+        PRINT_LOG_ERR (ERR_INFO);
+        goto error;
+    }
+
     for (i = 0; i < strlen (src); i++)
     {
         if (src[i] < '0' || src[i] > '9')
@@ -646,7 +652,7 @@ error:
 static
 int set_path_value (char* dest, size_t dest_size, char* src)
 {
-    if (strlen (src) >= dest_size)
+    if (src[0] == '\0' || strlen (src) >= dest_size)
     {
         PRINT_LOG_ERR (ERR_INFO);
         goto error;
@@ -825,11 +831,42 @@ error:
 }
 
 static
+char* trim_space (char* s)
+{
+    char* e;
+
+    while (isspace ((unsigned char) *s))
+    {
+        s++;
+    }
+
+    e = s + strlen (s);
+    while (e > s && isspace ((unsigned char) e[-1]))
+    {
+        *--e = '\0';
+    }
+
+    return s;
+}
+
+/* A value ends at an inline comment (';' or '#') and is trimmed, as in
+ * cubrid.conf. Quoted values are not supported. */
+static
+char* parse_conf_value (char* raw)
+{
+    raw[strcspn (raw, ";#")] = '\0';
+
+    return trim_space (raw);
+}
+
+static
 int compile_regex (regex_t* re_opt_header, regex_t* re_opt, regex_t* re_empty_line)
 {
     /* any [name]; the section name is classified by the caller */
     char* regex_header     = "^[[:blank:]]*\\[[[:blank:]]*([^][:blank:]]+)[[:blank:]]*\\][[:space:]]*$";
-    char* regex_key_value  = "^[[:blank:]]*([_[:alpha:]]+)[[:blank:]]*=[[:blank:]]*([[:alnum:]/._-]+)[[:space:]]*$";
+    /* non-empty key before the first '=', everything after it is the value;
+     * the key name is checked by set_backup_option / set_restore_option */
+    char* regex_key_value  = "^[[:blank:]]*([^=]*[^=[:space:]])[[:blank:]]*=(.*)$";
     char* regex_empty_line = "^[[:space:]]*$";
 
     if (IS_FAILURE (regcomp (re_opt_header, regex_header, REG_ICASE | REG_EXTENDED)))
@@ -883,11 +920,16 @@ int read_option (FILE* conf_fp)
     char* key;
     char* value;
 
+    /* "section:key" of the options already read, to reject duplicates; only
+     * known keys are recorded, so the array covers every option */
+    char seen_keys[32][64];
+    int seen_count = 0;
+    int i;
+
     enum read_state
     {
         BACKUP_OPTION_READ_STATE,
         RESTORE_OPTION_READ_STATE,
-        UNKNOWN_SECTION_READ_STATE,
         NO_READ_STATE
     };
 
@@ -940,8 +982,20 @@ int read_option (FILE* conf_fp)
             }
         }
 
+        /* the terminator is not line content (also keeps error messages on one line) */
+        while (line_len > 0 && (line_str[line_len - 1] == '\n' || line_str[line_len - 1] == '\r'))
+        {
+            line_str[--line_len] = '\0';
+        }
+
         /* empty string */
         if (IS_SUCCESS (regexec (&re_empty_line, line_str, 3, match, 0)))
+        {
+            continue;
+        }
+
+        /* # comment (as in cubrid.conf, ';' does not start a comment line) */
+        if (line_str[strspn (line_str, " \t")] == '#')
         {
             continue;
         }
@@ -962,11 +1016,8 @@ int read_option (FILE* conf_fp)
             }
             else
             {
-                /* keys up to the next known header belong to this section */
-                read_state = UNKNOWN_SECTION_READ_STATE;
-
-                PRINT_LOG_WARN ("cubrid_backup.conf:%d: unknown section [%s]; ignoring its keys\n",
-                                line_no, section);
+                PRINT_LOG_ERR ("cubrid_backup.conf:%d: unknown section [%s]\n", line_no, section);
+                goto error;
             }
 
             continue;
@@ -975,11 +1026,37 @@ int read_option (FILE* conf_fp)
         /* key = value */
         if (IS_SUCCESS (regexec (&re_opt, line_str, 3, match, 0)))
         {
+            const char* section_name;
+            char seen_key[64];
+
             key = &line_str[match[1].rm_so];
             line_str[match[1].rm_eo] = '\0';
+            key = trim_space (key);
 
-            value = &line_str[match[2].rm_so];
             line_str[match[2].rm_eo] = '\0';
+            value = parse_conf_value (&line_str[match[2].rm_so]);
+
+            if (value[0] == '"' || value[0] == '\'')
+            {
+                PRINT_LOG_ERR ("cubrid_backup.conf:%d: quoted values are not supported: %s=%s\n",
+                               line_no, key, value);
+                goto error;
+            }
+
+            section_name = (read_state == BACKUP_OPTION_READ_STATE) ? "backup" : "restore";
+            snprintf (seen_key, sizeof (seen_key), "%s:%s", section_name, key);
+
+            if (read_state != NO_READ_STATE)
+            {
+                for (i = 0; i < seen_count; i++)
+                {
+                    if (IS_ZERO (strcasecmp (seen_keys[i], seen_key)))
+                    {
+                        PRINT_LOG_ERR ("cubrid_backup.conf:%d: duplicate option: %s\n", line_no, key);
+                        goto error;
+                    }
+                }
+            }
 
             if (read_state == BACKUP_OPTION_READ_STATE)
             {
@@ -999,17 +1076,26 @@ int read_option (FILE* conf_fp)
                     goto error;
                 }
             }
-            else if (read_state == UNKNOWN_SECTION_READ_STATE)
-            {
-                continue;
-            }
             else
             {
                 PRINT_LOG_ERR ("cubrid_backup.conf:%d: option outside of any section: %s=%s\n",
                                line_no, key, value);
                 goto error;
             }
+
+            /* set_*_option accepted the key, so it is a known (short) name */
+            if (seen_count < (int) (sizeof (seen_keys) / sizeof (seen_keys[0])))
+            {
+                snprintf (seen_keys[seen_count], sizeof (seen_keys[0]), "%s", seen_key);
+                seen_count++;
+            }
+
+            continue;
         }
+
+        /* not empty, a comment, a [section] or key=value */
+        PRINT_LOG_ERR ("cubrid_backup.conf:%d: syntax error: %s\n", line_no, line_str);
+        goto error;
     }
 
     if (ferror (conf_fp))

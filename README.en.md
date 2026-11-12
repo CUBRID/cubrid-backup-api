@@ -208,17 +208,17 @@ The syntax rules are as follows.
 
 | Rule | Detail |
 |---|---|
-| Sections | `[backup]` and `[restore]` are recognised. Case-insensitive (`[BACKUP]` is the same). Any other name (e.g. `[foo]`) is logged as a warning, and every entry in that section is ignored until the next `[backup]` or `[restore]` header. |
+| Sections | `[backup]` and `[restore]` are recognised. Case-insensitive (`[BACKUP]` is the same). Any other name (e.g. `[foo]`) causes `cubrid_backup_initialize()` to fail. |
 | Line length | A line may hold up to 1023 characters, not counting the line terminator. A longer line causes `cubrid_backup_initialize()` to fail. |
-| Entries | `key = value`. Whitespace around `=` is allowed. |
-| Key characters | Letters and `_` only. Case-insensitive. |
-| Value characters | Alphanumerics and `/`, `.`, `_`, `-` only. **Spaces and other special characters are not allowed.** |
-| Comments | Prefixing a line with `#` makes that line ignored (e.g. `#thread_count=8` to disable an entry temporarily). There is no dedicated comment syntax — a line is simply ignored when it does not match `key = value`. **Inline comments are not supported.** Appending text after a value, as in `thread_count=8  # note`, makes the whole line silently ignored, so the entry stays at its default. |
+| Entries | `key = value`. The line is split at the first `=`, and surrounding whitespace is trimmed from the key and the value. The same key twice in one section causes `cubrid_backup_initialize()` to fail. |
+| Keys | Only defined key names, case-insensitive. An undefined key (including a typo) causes `cubrid_backup_initialize()` to fail. |
+| Values | Spaces, `=`, `@` and so on inside a value are read as written (e.g. in a path). An empty value, or a value starting with a quote (`"8"`, `'/data'`; quoted values are not supported), causes `cubrid_backup_initialize()` to fail. `#` and `;` start an inline comment, so **they cannot appear in a value** (e.g. `/data/bk#2` is read as `/data/bk`). Continuing a line with a trailing `\` is not supported. |
+| Comments | A line starting with `#` is a comment (e.g. `#thread_count=8` to disable an entry temporarily). From a `#` or `;` after a value to the end of the line is an inline comment (e.g. `thread_count=8  # note` applies `8`). As in `cubrid.conf`, a line starting with `;` is not a comment and causes `cubrid_backup_initialize()` to fail. |
 | Blank lines | Ignored. |
 | Boolean values | `true`, `false`, `1`, `0` (case-insensitive). |
 | Size values | A number optionally followed by a unit: `B`, `K`/`KB`, `M`/`MB`, `G`/`GB`, `T`/`TB`, or `P`/`PB` (1024-based, case-insensitive). Without a unit the value is in bytes. Decimals such as `1.5G` are accepted; any fraction of a byte is dropped. Units and decimal forms are the same as for CUBRID's own size parameters. A unit with no number (`MB`), a negative sign (`-1`), or an undefined unit causes `cubrid_backup_initialize()` to fail. |
 
-> **Caution** An unrecognised (but well-formed) key, an entry that appears before any section header, or a value of the wrong type causes `cubrid_backup_initialize()` to fail (entries inside an unknown section are ignored without being checked). The reason is written to `$CUBRID/log/cubrid_backup.log` together with the key, the value, and the line number. A value containing disallowed characters, or a line that does not parse as `key = value`, is silently ignored and its default is kept — so a typo can slip through unnoticed.
+> **Caution** Any line other than a blank line, a comment, a section header or `key = value` causes `cubrid_backup_initialize()` to fail, as do an undefined key or section, an entry before any section header, and a value of the wrong type. No configured line is silently ignored; the reason is written to `$CUBRID/log/cubrid_backup.log` together with the line number.
 
 ### 3.2 [backup] — backup behaviour
 
@@ -243,7 +243,7 @@ These settings are passed through to `cubrid backupdb` as command-line options.
 | `fifo_size` | size | `64KB` | Kernel buffer size of the named pipe that carries the backup data. It must be at least `64KB`; a smaller value makes initialization fail. A value above the operating system's pipe size limit (`/proc/sys/fs/pipe-max-size`, `1MB` by default) is lowered to that limit with a warning (if the file cannot be read, the limit is taken to be `1MB`; if the limit is set below `64KB`, `64KB` is used). `2GB` or more is outside the integer range, so initialization fails. `1MB` is recommended so that one write from the server's backup thread fits in a single pipe. |
 | `buffer_memory_size` | size | `0` | Size of the memory ring buffer. **`0` disables buffering.** A non-zero value must be at least the I/O unit, otherwise initialization fails. |
 | `buffer_disk_limit` | size | `0` | Reserved size of the disk spool file. `0` disables the disk tier. Setting it above `0` requires `buffer_memory_size` to be greater than `0`, and the value must be at least the larger of the pipe size the kernel actually sets for `fifo_size` (after adjustment) and the I/O unit. The kernel rounds the pipe size up to a power-of-two number of pages (for example `768KB` → `1MB`). Otherwise initialization fails. |
-| `buffer_disk_path` | path | (empty) | Directory in which the disk spool file is created. Required when `buffer_disk_limit > 0`; it must be an **absolute path** (a relative path makes initialization fail), and the directory must exist and be readable, writable, and executable. |
+| `buffer_disk_path` | path | (empty) | Directory in which the disk spool file is created. An explicit empty value (`buffer_disk_path=`) makes initialization fail. Required when `buffer_disk_limit > 0`; it must be an **absolute path** (a relative path makes initialization fail), and the directory must exist and be readable, writable, and executable. |
 | `buffer_disk_keep_spool` | boolean | `false` | With the default `false`, the spool file is unlinked immediately after creation, so its space is reclaimed automatically when the backup ends or the process terminates abnormally. `true` keeps the file for debugging. |
 
 The **I/O unit** is the granularity the API reads and writes with: the block size of the file system holding the temporary working directory, multiplied by 8. On a typical Linux file system this is 4 KB × 8 = **32 KB**.
@@ -312,7 +312,7 @@ A setting with wrong syntax, form, or range is treated as a failure, and a value
 |---|---|
 | The configuration file exists but cannot be read, or its path is too long | `cubrid_backup_initialize()` fails |
 | A line longer than 1023 characters | `cubrid_backup_initialize()` fails |
-| Unknown section (e.g. `[foo]`) | Warning; entries in that section are ignored until the next `[backup]` or `[restore]` header |
+| Unknown section (e.g. `[foo]`) | `cubrid_backup_initialize()` fails |
 | Unrecognised (but well-formed) key, entry outside a section, or wrong-type value (including a size with no number such as `MB`, or an undefined unit) | `cubrid_backup_initialize()` fails |
 | `fifo_size` below `64KB` | `cubrid_backup_initialize()` fails |
 | `fifo_size` above `/proc/sys/fs/pipe-max-size` | Warning, lowered to `pipe-max-size` (not below `64KB`), continues |
@@ -325,7 +325,8 @@ A setting with wrong syntax, form, or range is treated as a failure, and a value
 | Free space in the spool directory is below `buffer_disk_limit` | Warning at initialization, continues. If the reserve fails at `cubrid_backup_begin()`, `cubrid_backup_begin()` fails |
 | `$CUBRID/tmp` is unusable and `CUBRID_TMP` is a relative path | `cubrid_backup_initialize()` fails (see [9.3](#93-temporary-working-directory)) |
 | A configured resource cannot be secured at `cubrid_backup_begin()` (list below) | `cubrid_backup_begin()` fails |
-| Value with disallowed characters, or a line not in `key = value` form | Silently ignored, default kept |
+| A line not in `key = value` form (no `=`, empty key, a line starting with `;`, ...) | `cubrid_backup_initialize()` fails (`syntax error`) |
+| Empty value, quoted value, or the same key twice in one section | `cubrid_backup_initialize()` fails |
 
 `cubrid_backup_begin()` secures all of the following resources before it launches `cubrid backupdb`, and returns `-1` if any of them fails. In that case `cubrid backupdb` is not launched, and the named pipe, spool file, buffers, and threads created so far are all released (the spool file is removed even with `buffer_disk_keep_spool=true`). `cubrid_backup_begin()` can be called again in the same process, and the reason is written to `$CUBRID/log/cubrid_backup.log` as an `ERROR`.
 

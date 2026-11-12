@@ -294,9 +294,11 @@ static const struct init_case init_cases[] =
       "[backup]\nbuffer_disk_limit=0\nbuffer_disk_path=/var/tmp/cubrid_backup_spool\n", 1, NULL },
 
     /* sections */
-    { "S unknown section keys ignored, next known header resumes",
+    { "S unknown section fails",
       "[backup]\nthread_count=3\n[foo]\nthread_count=abc\nsa_mode=true\n[restore]\npartial_recovery=true\n",
-      1, "cubrid_backup.conf:3: unknown section [foo]; ignoring its keys" },
+      0, "cubrid_backup.conf:3: unknown section [foo]" },
+    { "S misspelled section fails",
+      "[bakup]\nthread_count=8\n", 0, "cubrid_backup.conf:1: unknown section [bakup]" },
     { "S upper/mixed-case headers accepted",
       "[BACKUP]\nsa_mode=true\n[ Restore ]\nuse_database_location_path=true\n", 1, NULL },
     { "S key before any header still fails",
@@ -304,11 +306,55 @@ static const struct init_case init_cases[] =
     { "S unknown key still fails",
       "[backup]\nno_such_key=1\n", 0, "invalid [backup] option: no_such_key=1" },
     { "S unknown section first, then [backup]",
-      "[common]\nfoo=bar\n[backup]\nsa_mode=true\n", 1, "unknown section [common]" },
+      "[common]\nfoo=bar\n[backup]\nsa_mode=true\n", 0, "cubrid_backup.conf:1: unknown section [common]" },
 
-    /* malformed lines: unchanged (still skipped silently) */
-    { "M malformed lines still ignored",
-      "[backup]\nthread_count = 8 # comment\nsleep_msecs=1 0\n# comment\n", 1, NULL },
+    /* line syntax follows cubrid.conf: a line is applied or init fails */
+    { "M inline # comment applied",
+      "[backup]\nthread_count = 8 # comment\n# comment\n  # indented comment\n", 1, NULL },
+    { "M inline ; comment applied",
+      "[backup]\nthread_count=8 ; comment\n", 1, NULL },
+    { "M comment before any section ok",
+      "# header comment\n\n[backup]\nsa_mode=true\n", 1, NULL },
+    { "M space inside a size value fails",
+      "[backup]\nbuffer_memory_size=64 MB\n", 0, "cubrid_backup.conf:2: invalid [backup] option: buffer_memory_size=64 MB" },
+    { "M space inside an int value fails",
+      "[backup]\nsleep_msecs=1 0\n", 0, "invalid [backup] option: sleep_msecs=1 0" },
+    { "M missing '=' fails",
+      "[backup]\nthread_count 8\n", 0, "cubrid_backup.conf:2: syntax error: thread_count 8" },
+    { "M hyphenated key fails",
+      "[backup]\nthread-count=8\n", 0, "invalid [backup] option: thread-count=8" },
+    { "M key with digit fails",
+      "[backup]\nthread_count2=8\n", 0, "invalid [backup] option: thread_count2=8" },
+    { "M ; comment line fails",
+      "[backup]\n; memo\n", 0, "cubrid_backup.conf:2: syntax error: ; memo" },
+    { "M empty key fails",
+      "[backup]\n=8\n", 0, "cubrid_backup.conf:2: syntax error: =8" },
+    { "M empty int value fails",
+      "[backup]\nthread_count=\n", 0, "invalid [backup] option: thread_count=" },
+    { "M value that is only a comment fails",
+      "[backup]\nthread_count= # none\n", 0, "invalid [backup] option: thread_count=" },
+    { "M empty bool value fails",
+      "[backup]\nsa_mode=\n", 0, "invalid [backup] option: sa_mode=" },
+    { "M empty size value fails",
+      "[backup]\nbuffer_memory_size=\n", 0, "invalid [backup] option: buffer_memory_size=" },
+    { "M empty path value fails",
+      "[backup]\nbuffer_disk_path=\n", 0, "invalid [backup] option: buffer_disk_path=" },
+    { "M double-quoted value fails",
+      "[backup]\nthread_count=\"8\"\n", 0, "quoted values are not supported: thread_count=\"8\"" },
+    { "M single-quoted path fails",
+      "[backup]\nbuffer_disk_path='/var/tmp'\n", 0, "quoted values are not supported" },
+    { "M duplicate key fails",
+      "[backup]\nthread_count=4\nthread_count=8\n", 0, "cubrid_backup.conf:3: duplicate option: thread_count" },
+    { "M duplicate key across repeated [backup] fails",
+      "[backup]\nsa_mode=true\n[restore]\npartial_recovery=true\n[backup]\nSA_MODE=false\n", 0, "duplicate option: SA_MODE" },
+    { "M keys in different sections are independent",
+      "[backup]\nsa_mode=true\n[restore]\npartial_recovery=true\n", 1, NULL },
+    { "M garbage line fails",
+      "[backup]\nsa_mode=true\nhello world\n", 0, "cubrid_backup.conf:3: syntax error: hello world" },
+    { "M unterminated header fails",
+      "[backup\nsa_mode=true\n", 0, "cubrid_backup.conf:1: syntax error: [backup" },
+    { "M CRLF line endings ok",
+      "[backup]\r\nthread_count=8\r\n", 1, NULL },
 
     /* conf absent */
     { "C no conf file -> defaults", NULL, 1, NULL },
@@ -383,16 +429,29 @@ static void t_values (void)
         CHECK (run_conf (buf) == SUCCESS, "disk_limit = max(pipe capacity for fifo_size, io_size) ok");
     }
 
-    /* unknown section: values */
-    CHECK (run_conf ("[backup]\nthread_count=3\n[foo]\nthread_count=abc\nsa_mode=true\n[restore]\npartial_recovery=true\n") == SUCCESS
-           && bo ()->thread_count == 3 && bo ()->sa_mode == false && ro ()->partial_recovery == true,
-           "[foo] keys not applied to [backup]; [restore] after it applied");
 
     CHECK (run_conf ("[BACKUP]\nsa_mode=true\n[ Restore ]\nuse_database_location_path=true\n") == SUCCESS
            && bo ()->sa_mode == true && ro ()->use_database_location_path == true, "[BACKUP]/[ Restore ] values applied");
 
-    CHECK (run_conf ("[backup]\nthread_count = 8 # comment\n") == SUCCESS && bo ()->thread_count == 0,
-           "malformed line skipped (thread_count stays default)");
+    CHECK (run_conf ("[backup]\nthread_count = 8 # comment\n") == SUCCESS && bo ()->thread_count == 8,
+           "inline # comment: value before it applied");
+    CHECK (run_conf ("[backup]\nthread_count=8;x\nsleep_msecs = 20\t\r\n") == SUCCESS
+           && bo ()->thread_count == 8 && bo ()->sleep_msecs == 20,
+           "inline ; comment and surrounding blanks/CR stripped");
+    {
+        char p[PATH_MAX + 64];
+        char sp[PATH_MAX];
+
+        /* spool dir with characters the old value regex rejected (Jenkins job@2 workspaces) */
+        snprintf (sp, sizeof (sp), "%s/job@2 + ~dir \xED\x95\x9C\xEA\xB8\x80", g_home);
+        assert (mkdir (sp, 0700) == 0);
+        snprintf (p, sizeof (p), "[backup]\nbuffer_memory_size=1MB\nbuffer_disk_limit=64MB\nbuffer_disk_path=%s\n", sp);
+        CHECK (run_conf (p) == SUCCESS && strcmp (bo ()->buffer_disk_path, sp) == 0,
+               "spool path with '@', '+', '~', spaces and non-ASCII applied as written");
+        rmdir (sp);
+    }
+    CHECK (run_conf ("[backup]\nbuffer_disk_limit=0\nbuffer_disk_path=/a=b/c\n") == SUCCESS
+           && strcmp (bo ()->buffer_disk_path, "/a=b/c") == 0, "value may contain '='");
 
     CHECK (run_conf (NULL) == SUCCESS && bo ()->fifo_size == 64 * 1024 && bo ()->buffer_memory_size == 0
            && bo ()->buffer_disk_limit == 0 && bo ()->buffer_disk_path[0] == '\0', "no conf -> defaults");
