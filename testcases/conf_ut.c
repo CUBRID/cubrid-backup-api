@@ -9,7 +9,7 @@
  * the return code, the parsed values and the log lines.
  *
  * Covers APIS-1102 PART A: size units/fractions, fifo_size range,
- * buffer_disk_limit >= max(fifo_size, io_size), absolute buffer_disk_path,
+ * buffer_disk_limit >= max(pipe capacity for fifo_size, io_size), absolute buffer_disk_path,
  * unreadable conf, too-long conf path, unknown/upper-case sections, over-long
  * lines, relative CUBRID_TMP, errno reset in set_int_value, and the conf blocks
  * used by testcases/cubrid_backup.conf, run_test.sh and the stress scripts.
@@ -264,19 +264,26 @@ static const struct init_case init_cases[] =
     { "2 fifo_size=64K ok",
       "[backup]\nfifo_size=64K\n", 1, NULL },
 
-    /* item 3: buffer_disk_limit vs max(fifo_size, io_size) */
+    /* item 3: buffer_disk_limit vs max(pipe capacity for fifo_size, io_size) */
     { "3 mem=64MB disk=16KB fails",
-      "[backup]\nbuffer_memory_size=64MB\nbuffer_disk_limit=16KB\nbuffer_disk_path=@SPOOL@\n", 0, "is below max(fifo_size, io_size)" },
+      "[backup]\nbuffer_memory_size=64MB\nbuffer_disk_limit=16KB\nbuffer_disk_path=@SPOOL@\n", 0, "is below max(pipe capacity for fifo_size, io_size)" },
     { "3 fifo=1MB disk=512KB fails (s01 C2)",
       "[backup]\nfifo_size=1MB\nbuffer_memory_size=1MB\nbuffer_disk_limit=512KB\nbuffer_disk_path=@SPOOL@\n", 0, "buffer_disk_limit=524288 is below" },
     { "3 fifo=1MB disk=1MB ok (boundary)",
       "[backup]\nfifo_size=1MB\nbuffer_memory_size=1MB\nbuffer_disk_limit=1MB\nbuffer_disk_path=@SPOOL@\n", 1, NULL },
+    { "3 fifo=768KB disk=800KB fails (kernel rounds the pipe up to 1MB)",
+      "[backup]\nfifo_size=768KB\nbuffer_memory_size=1MB\nbuffer_disk_limit=800KB\nbuffer_disk_path=@SPOOL@\n", 0,
+      "buffer_disk_limit=819200 is below max(pipe capacity for fifo_size, io_size)" },
+    { "3 fifo=768KB disk=1MB ok (rounded pipe capacity)",
+      "[backup]\nfifo_size=768KB\nbuffer_memory_size=1MB\nbuffer_disk_limit=1MB\nbuffer_disk_path=@SPOOL@\n", 1, NULL },
     { "3 disk without mem still fails (s01 C5)",
-      "[backup]\nbuffer_memory_size=0\nbuffer_disk_limit=256MB\nbuffer_disk_path=@SPOOL@\n", 0, NULL },
+      "[backup]\nbuffer_memory_size=0\nbuffer_disk_limit=256MB\nbuffer_disk_path=@SPOOL@\n", 0,
+      "buffer_disk_limit=268435456 requires buffer_memory_size > 0" },
     { "3 mem below io_size still fails (s01 B5)",
-      "[backup]\nbuffer_memory_size=1KB\n", 0, NULL },
+      "[backup]\nbuffer_memory_size=1KB\n", 0, "buffer_memory_size=1024 is below the I/O unit" },
     { "3 disk path missing dir still fails (s02 163)",
-      "[backup]\nbuffer_memory_size=256MB\nbuffer_disk_limit=256MB\nbuffer_disk_path=/nonexistent_dir_xyz/spool\n", 0, NULL },
+      "[backup]\nbuffer_memory_size=256MB\nbuffer_disk_limit=256MB\nbuffer_disk_path=/nonexistent_dir_xyz/spool\n", 0,
+      "buffer_disk_path='/nonexistent_dir_xyz/spool' must be an existing directory" },
 
     /* item 5: buffer_disk_path must be absolute */
     { "5 relative path with disk tier fails",
@@ -356,7 +363,7 @@ static void t_values (void)
     CHECK (run_conf (buf) == SUCCESS && bo ()->fifo_size == g_pipe_max && !log_has ("exceeds pipe-max-size"),
            "fifo_size == pipe-max-size kept without WARN");
 
-    /* item 3 boundary uses io_size when io_size > fifo_size */
+    /* item 3 boundary uses io_size when io_size > the pipe capacity for fifo_size */
     {
         int io;
         run_conf (NULL);
@@ -364,16 +371,16 @@ static void t_values (void)
         if (io > 64 * 1024)
         {
             snprintf (buf, sizeof (buf), "[backup]\nbuffer_memory_size=64MB\nbuffer_disk_limit=%dB\nbuffer_disk_path=@SPOOL@\n", io - 1);
-            CHECK (run_conf (buf) == FAILURE, "disk_limit = io_size-1 fails (io_size > fifo_size)");
+            CHECK (run_conf (buf) == FAILURE, "disk_limit = io_size-1 fails (io_size > pipe capacity)");
         }
         else
         {
             snprintf (buf, sizeof (buf), "[backup]\nbuffer_memory_size=64MB\nbuffer_disk_limit=%dB\nbuffer_disk_path=@SPOOL@\n", 64 * 1024 - 1);
-            CHECK (run_conf (buf) == FAILURE, "disk_limit = fifo_size-1 fails (fifo_size >= io_size)");
+            CHECK (run_conf (buf) == FAILURE, "disk_limit = pipe capacity-1 fails (64KB fifo, capacity >= io_size)");
         }
         snprintf (buf, sizeof (buf), "[backup]\nbuffer_memory_size=64MB\nbuffer_disk_limit=%dB\nbuffer_disk_path=@SPOOL@\n",
                   io > 64 * 1024 ? io : 64 * 1024);
-        CHECK (run_conf (buf) == SUCCESS, "disk_limit = max(fifo_size, io_size) ok");
+        CHECK (run_conf (buf) == SUCCESS, "disk_limit = max(pipe capacity for fifo_size, io_size) ok");
     }
 
     /* unknown section: values */

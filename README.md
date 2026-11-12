@@ -242,7 +242,7 @@ partial_recovery=false
 |---|---|---|---|
 | `fifo_size` | 크기 | `64KB` | 백업 데이터를 받는 named pipe의 커널 버퍼 크기입니다. `64KB` 이상이어야 하며, 그보다 작으면 초기화가 실패합니다. 운영 체제의 파이프 크기 상한(`/proc/sys/fs/pipe-max-size`, 기본 `1MB`)을 넘으면 경고를 남기고 그 상한으로 조정합니다(이 파일을 읽을 수 없으면 상한을 `1MB`로 간주하고, 상한이 `64KB`보다 작게 설정되어 있으면 `64KB`로 조정합니다). `2GB` 이상은 정수 범위를 벗어나므로 초기화가 실패합니다. 서버 백업 스레드가 한 번에 쓰는 크기가 한 번에 담기도록 `1MB`를 권장합니다. |
 | `buffer_memory_size` | 크기 | `0` | 메모리 링 버퍼 크기입니다. **`0`이면 버퍼링을 사용하지 않습니다.** `0`이 아니면 I/O 단위 이상이어야 하며, 그렇지 않으면 초기화가 실패합니다. |
-| `buffer_disk_limit` | 크기 | `0` | 디스크 스풀 파일의 예약 크기입니다. `0`이면 디스크 계층을 사용하지 않습니다. `0`보다 크게 설정하려면 `buffer_memory_size`가 `0`보다 커야 하고, `fifo_size`(조정 후 값)와 I/O 단위 중 큰 값 이상이어야 합니다. 그렇지 않으면 초기화가 실패합니다. |
+| `buffer_disk_limit` | 크기 | `0` | 디스크 스풀 파일의 예약 크기입니다. `0`이면 디스크 계층을 사용하지 않습니다. `0`보다 크게 설정하려면 `buffer_memory_size`가 `0`보다 커야 하고, 커널이 `fifo_size`(조정 후 값)에 대해 실제로 잡는 파이프 크기와 I/O 단위 중 큰 값 이상이어야 합니다. 커널은 파이프 크기를 2의 거듭제곱 페이지 수로 올려 잡습니다(예: `768KB` → `1MB`). 그렇지 않으면 초기화가 실패합니다. |
 | `buffer_disk_path` | 경로 | (없음) | 디스크 스풀 파일을 만들 디렉터리입니다. `buffer_disk_limit > 0`이면 반드시 지정해야 하고, **절대 경로**여야 하며(상대 경로면 초기화 실패), 그 디렉터리가 존재하며 읽기·쓰기·실행 권한이 있어야 합니다. |
 | `buffer_disk_keep_spool` | 불리언 | `false` | 기본값 `false`면 스풀 파일을 생성 직후 파일 시스템에서 지워, 백업이 끝나거나 프로세스가 비정상 종료해도 공간이 자동 회수됩니다. `true`면 스풀 파일을 남깁니다(디버깅 용도). |
 
@@ -252,7 +252,7 @@ partial_recovery=false
 
 - `buffer_memory_size`는 소비자가 일시적으로 느려질 때 흡수해야 할 데이터량으로 잡습니다. 64MB가 일반적인 출발점입니다.
 - `buffer_disk_limit`은 데이터 볼륨 구간이 끝난 뒤 이어지는 **로그 구간 전체**(아카이브 로그 + 로그 정보 + 액티브 로그)를 담을 수 있는 크기로 잡습니다. 이 값이 부족하면 로그 구간에서 대기가 발생해 버퍼를 둔 효과가 줄어듭니다.
-- `buffer_disk_limit`이 `fifo_size`와 I/O 단위 중 큰 값보다 작으면 초기화가 실패합니다. 커널은 실제 파이프 버퍼를 `fifo_size`보다 크게 잡을 수 있는데, 예약분이 그 실제 크기보다 작으면 `cubrid_backup_begin()` 이후 경고를 남기고 로그 구간 경계 감지를 끈 채 디스크 계층을 단순 오버플로 용도로만 사용합니다.
+- `buffer_disk_limit`이 커널이 실제로 잡는 파이프 크기(`fifo_size`를 2의 거듭제곱 페이지 수로 올린 값)와 I/O 단위 중 큰 값보다 작으면 초기화가 실패합니다. 예를 들어 `fifo_size=768KB`이면 파이프는 `1MB`로 잡히므로 `buffer_disk_limit=800KB`는 실패합니다.
 - 스풀 디렉터리의 여유 공간이 `buffer_disk_limit`보다 적으면 초기화 시점에는 경고만 남깁니다. 그러나 `cubrid_backup_begin()` 시점에도 공간이 부족하면 스풀 공간을 예약하지 못해 `cubrid_backup_begin()`이 실패합니다([3.6](#36-잘못된-설정에-대한-동작) 참고).
 
 ### 3.4 [restore] — 복구 설정
@@ -306,7 +306,7 @@ partial_recovery=false
 
 ### 3.6 잘못된 설정에 대한 동작
 
-문법·형식·범위가 맞지 않는 설정은 실패로 처리하고, 값을 바꿔서 진행하는 것은 운영 체제 상한(`fifo_size`)에만 적용합니다. 설정한 자원을 확보하지 못하면 기능을 끄고 진행하지 않고 실패합니다. CUBRID 본체가 `cubrid.conf`를 다루는 방식과 같습니다.
+문법·형식·범위가 맞지 않는 설정은 실패로 처리하고, 값을 바꿔서 진행하는 것은 운영 체제 상한(`fifo_size`)에만 적용합니다. 설정한 자원을 확보하지 못하면 기능을 끄고 진행하지 않고 실패합니다. 다만 파이프 버퍼 크기는 커널에 대한 요청(힌트)이므로, 거절되면 경고를 남기고 커널이 정한 크기로 진행합니다. CUBRID 본체가 `cubrid.conf`를 다루는 방식과 같습니다.
 
 | 조건 | 동작 |
 |---|---|
@@ -319,8 +319,8 @@ partial_recovery=false
 | `fifo_size`가 `2GB` 이상(정수 범위 초과) | `cubrid_backup_initialize()` 실패 |
 | `buffer_memory_size`가 `0`이 아니면서 I/O 단위 미만 | `cubrid_backup_initialize()` 실패 |
 | `buffer_disk_limit > 0`인데 `buffer_memory_size = 0` | `cubrid_backup_initialize()` 실패 |
-| `buffer_disk_limit > 0`인데 `max(fifo_size, I/O 단위)` 미만 | `cubrid_backup_initialize()` 실패 |
-| `buffer_disk_limit`이 `max(fifo_size, I/O 단위)` 이상이지만 커널이 실제로 잡은 파이프 버퍼보다 작음(커널이 `fifo_size`를 올려 잡을 수 있음) | `cubrid_backup_begin()` 이후 경고, 로그 구간 경계 감지를 끄고 디스크 계층은 단순 오버플로 용도로만 사용하며 백업은 계속 진행 |
+| `buffer_disk_limit > 0`인데 `max(fifo_size에 대해 커널이 잡는 파이프 크기, I/O 단위)` 미만 | `cubrid_backup_initialize()` 실패 |
+| 파이프 버퍼 크기를 `fifo_size`로 설정하지 못함(예: 사용자별 파이프 버퍼 한도 `/proc/sys/fs/pipe-user-pages-soft` 초과) | `cubrid_backup_begin()` 시점에 경고 후 커널이 정한 파이프 크기로 계속 진행(버퍼링 사용 여부와 무관) |
 | `buffer_disk_limit > 0`인데 `buffer_disk_path`가 없거나, 상대 경로이거나, 접근할 수 없음 | `cubrid_backup_initialize()` 실패 |
 | 스풀 디렉터리 여유 공간 < `buffer_disk_limit` | 초기화 시점에는 경고 후 계속 진행. `cubrid_backup_begin()` 시점에 예약하지 못하면 `cubrid_backup_begin()` 실패 |
 | `$CUBRID/tmp`를 쓸 수 없고 `CUBRID_TMP`가 상대 경로 | `cubrid_backup_initialize()` 실패([9.3](#93-임시-작업-디렉터리) 참고) |
@@ -329,12 +329,12 @@ partial_recovery=false
 
 `cubrid_backup_begin()`은 `cubrid backupdb`를 실행하기 전에 다음 자원을 모두 확보하며, 하나라도 실패하면 `-1`을 반환합니다. 이때 `cubrid backupdb`는 실행되지 않고, 그때까지 만든 named pipe·스풀 파일·버퍼·스레드는 모두 정리됩니다(`buffer_disk_keep_spool=true`여도 스풀 파일을 지웁니다). 같은 프로세스에서 `cubrid_backup_begin()`을 다시 호출할 수 있으며, 원인은 `$CUBRID/log/cubrid_backup.log`에 `ERROR`로 기록됩니다.
 
-- `buffer_memory_size > 0`일 때: 파이프 버퍼 크기를 `fifo_size`로 설정하지 못함(예: 사용자별 파이프 버퍼 한도 `/proc/sys/fs/pipe-user-pages-soft`를 넘은 경우), 메모리 링 버퍼 할당, drain 스레드용 내부 자원(이벤트 fd) 생성, drain 스레드 생성에 실패함.
+- `buffer_memory_size > 0`일 때: 메모리 링 버퍼 할당, drain 스레드용 내부 자원(이벤트 fd) 생성, drain 스레드 생성에 실패함.
 - `buffer_disk_limit > 0`일 때: 스풀 파일 경로가 너무 김, 스풀 파일을 만들지 못함, `buffer_disk_limit`만큼 공간을 예약하지 못함(여유 공간 부족 포함), 디스크 계층용 작업 버퍼나 로그 구간 감지용 버퍼를 할당하지 못함.
 
-버퍼링을 사용하지 않을 때(`buffer_memory_size=0`) 파이프 버퍼 크기를 `fifo_size`로 설정하지 못하면, 이전 버전과 같이 경고를 남기고 커널이 정한 파이프 크기로 계속 진행합니다.
+파이프 버퍼 크기를 `fifo_size`로 설정하지 못하면 버퍼링 사용 여부와 관계없이 이전 버전과 같이 경고를 남기고 커널이 정한 파이프 크기로 계속 진행합니다. drain 스레드는 실제로 잡힌 파이프 크기에 맞춰 동작하므로 버퍼링과 로그 구간 감지는 그대로 동작합니다. 다만 페이지가 4KB보다 큰 시스템에서는 커널 기본 파이프가 `buffer_disk_limit`보다 클 수 있으며, 이때는 경고를 남기고 로그 구간 경계 감지를 끈 채 디스크 계층을 단순 오버플로 용도로만 사용합니다.
 
-반면 백업 스트림의 내용 때문에([10. 제약 사항](#10-제약-사항) 참고), 또는 예약분이 실제 파이프 버퍼보다 작아서(위 표) 로그 구간 경계 감지가 꺼지는 경우는 경고를 남기고 계속 진행합니다.
+반면 백업 스트림의 내용 때문에([10. 제약 사항](#10-제약-사항) 참고) 로그 구간 경계 감지가 꺼지는 경우는 경고를 남기고 계속 진행합니다.
 
 > **주의** 초기화 시점에 즉시 실패하는 항목들은 백업이 절반쯤 진행된 뒤에 문제가 드러나는 상황을 피하기 위한 것입니다. 설정을 바꾼 뒤에는 반드시 `cubrid_backup_initialize()`와 `cubrid_backup_begin()`의 반환값을 확인하십시오.
 
@@ -528,7 +528,7 @@ int cubrid_backup_begin (CUBRID_BACKUP_INFO* backup_info, void** backup_handle);
 | 값 | 설명 |
 |---|---|
 | `0` | 성공 |
-| `-1` | 실패. `backup_info`의 값이 유효 범위를 벗어난 경우, 이미 다른 백업이 진행 중인 경우, named pipe 생성이나 `cubrid backupdb` 실행에 실패한 경우, 파이프 버퍼 크기 설정이나 계층형 버퍼 자원 확보에 실패한 경우([3.6](#36-잘못된-설정에-대한-동작) 참고)입니다. |
+| `-1` | 실패. `backup_info`의 값이 유효 범위를 벗어난 경우, 이미 다른 백업이 진행 중인 경우, named pipe 생성이나 `cubrid backupdb` 실행에 실패한 경우, 계층형 버퍼 자원 확보에 실패한 경우([3.6](#36-잘못된-설정에-대한-동작) 참고)입니다. |
 
 > **참고** 이 함수가 성공했다는 것은 백업 실행이 시작되었다는 뜻입니다. 데이터베이스 이름이 잘못된 경우처럼 CUBRID 서버 측에서 발생하는 오류는 이후 `cubrid_backup_read()`가 `-1`을 반환하는 형태로 드러납니다.
 
@@ -1269,7 +1269,7 @@ CUBRID=/path/to/CUBRID bash run_stress.sh s01_param_sweep s09_fault_boundary   #
 | 증상 | 원인과 조치 |
 |---|---|
 | `cubrid_backup_initialize()`가 `-1`을 반환한다 | `CUBRID` 환경 변수가 설정되지 않았거나, `$CUBRID/log` 또는 임시 작업 디렉터리에 쓰기 권한이 없거나, 설정 파일에 유효하지 않은 항목이 있습니다. `cubrid_backup.conf`의 키 이름 오타를 먼저 확인하십시오. 줄 단위 설정 오류는 줄 번호와 키·값이 `$CUBRID/log/cubrid_backup.log`에 남습니다([3.6](#36-잘못된-설정에-대한-동작) 참고). |
-| `cubrid_backup_begin()`이 `-1`을 반환한다 | `CUBRID_BACKUP_INFO`의 멤버가 초기화되지 않았거나 값이 범위를 벗어났습니다. 설정 파일 값을 쓰려는 항목에 `-1`을 넣었는지 확인하십시오. 같은 프로세스에서 이미 백업이 진행 중일 때도 실패합니다. 파이프 버퍼 크기나 계층형 버퍼 자원(메모리 링, 스풀 공간 등)을 확보하지 못해도 실패하며, 이때 원인이 `$CUBRID/log/cubrid_backup.log`에 `ERROR`로 남습니다([3.6](#36-잘못된-설정에-대한-동작) 참고). |
+| `cubrid_backup_begin()`이 `-1`을 반환한다 | `CUBRID_BACKUP_INFO`의 멤버가 초기화되지 않았거나 값이 범위를 벗어났습니다. 설정 파일 값을 쓰려는 항목에 `-1`을 넣었는지 확인하십시오. 같은 프로세스에서 이미 백업이 진행 중일 때도 실패합니다. 계층형 버퍼 자원(메모리 링, 스풀 공간 등)을 확보하지 못해도 실패하며, 이때 원인이 `$CUBRID/log/cubrid_backup.log`에 `ERROR`로 남습니다([3.6](#36-잘못된-설정에-대한-동작) 참고). |
 | `cubrid_backup_begin()`은 성공했는데 첫 `cubrid_backup_read()`가 `-1`을 반환한다 | CUBRID 서버 측 오류입니다. 데이터베이스 이름이 정확한지, 서버가 실행 중인지(온라인 백업), 또는 정지되어 있는지(`sa_mode=1`), `db_name`에 원격 호스트를 지정하지 않았는지 확인하십시오. `$CUBRID/log/cubrid_utility.log`에 원인이 남습니다. |
 | 백업이 진행되지 않고 오래 멈춘 것처럼 보인다 | 소비자가 데이터를 받아 가지 못해 버퍼가 가득 찬 상태일 수 있습니다. `cubrid_backup_read()`를 계속 호출하고 있는지 확인하고, 버퍼 요약의 `wait_count`를 참고해 `buffer_memory_size`와 `buffer_disk_limit`을 늘려 보십시오. |
 | 복구한 백업 파일로 `cubrid restoredb`가 실패한다 | `cubrid_restore_write()`에 데이터를 백업 시 읽은 순서 그대로 전달했는지, 중간에 누락된 조각이 없는지 확인하십시오. `cubrid_backup_read()`가 `-1`을 반환한 백업의 데이터는 사용할 수 없습니다. |

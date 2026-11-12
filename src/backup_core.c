@@ -517,20 +517,12 @@ int open_fifo (HANDLE_TYPE handle_type, void* handle)
         }
 
         /* Size the kernel pipe buffer on the read end before backupdb opens the
-         * write end. With tiered buffering the configured fifo_size must be
-         * secured: on failure fail begin (fifo_fd stays set, so free_handle
-         * closes and unlinks the FIFO). Without buffering keep the legacy
-         * best-effort behavior: warn and continue with the kernel pipe size. */
+         * write end. The size is a hint to the kernel, as tcp_sndbuf_size is in
+         * CUBRID: on failure warn and continue with the kernel pipe size (the
+         * drain sizes its scratch from F_GETPIPE_SZ, so buffering still works). */
         if (fcntl (backup_handle->fifo_fd, F_SETPIPE_SZ,
                    backup_mgr->default_backup_option.fifo_size) == -1)
         {
-            if (backup_mgr->default_backup_option.buffer_memory_size > 0)
-            {
-                PRINT_LOG_ERR ("cannot set the FIFO pipe size to fifo_size=%d (F_SETPIPE_SZ): %s\n",
-                               backup_mgr->default_backup_option.fifo_size, strerror (errno));
-                goto error;
-            }
-
             PRINT_LOG_WARN ("cannot set the FIFO pipe size to fifo_size=%d (F_SETPIPE_SZ): %s; using the kernel pipe size\n",
                             backup_mgr->default_backup_option.fifo_size, strerror (errno));
         }

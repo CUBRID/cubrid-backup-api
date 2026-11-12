@@ -1142,11 +1142,33 @@ int read_pipe_max_size (void)
     return (val > INT_MAX) ? INT_MAX : (int) val;
 }
 
+/* Pipe capacity the kernel sets for F_SETPIPE_SZ (size): size rounded up to
+ * a power-of-two number of pages (round_pipe_size). */
+static
+long long pipe_capacity_for (int size)
+{
+    long long page = sysconf (_SC_PAGESIZE);
+    long long pages = 1;
+
+    if (page <= 0)
+    {
+        page = 4096;
+    }
+
+    while (pages * page < (long long) size)
+    {
+        pages <<= 1;
+    }
+
+    return pages * page;
+}
+
 static
 int validate_backup_option (void)
 {
     BACKUP_OPTION* backup_opt;
     long long min_disk_limit;
+    long long pipe_bytes;
     int pipe_max;
     int fifo_max;
 
@@ -1178,7 +1200,8 @@ int validate_backup_option (void)
     if (backup_opt->buffer_memory_size != 0 &&
         backup_opt->buffer_memory_size < backup_mgr->io_size)
     {
-        PRINT_LOG_ERR (ERR_INFO);
+        PRINT_LOG_ERR ("cubrid_backup.conf: buffer_memory_size=%lld is below the I/O unit %d\n",
+                       backup_opt->buffer_memory_size, backup_mgr->io_size);
         goto error;
     }
 
@@ -1189,7 +1212,8 @@ int validate_backup_option (void)
 
         if (backup_opt->buffer_memory_size == 0)
         {
-            PRINT_LOG_ERR (ERR_INFO);
+            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_limit=%lld requires buffer_memory_size > 0\n",
+                           backup_opt->buffer_disk_limit);
             goto error;
         }
 
@@ -1204,17 +1228,19 @@ int validate_backup_option (void)
 
         if (IS_FAILURE (validate_dir (backup_opt->buffer_disk_path)))
         {
-            PRINT_LOG_ERR (ERR_INFO);
+            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_path='%s' must be an existing directory with read, write and execute permission\n",
+                           backup_opt->buffer_disk_path);
             goto error;
         }
 
-        /* the spool must hold at least one pipe-full / one io_size chunk */
-        min_disk_limit = (backup_opt->fifo_size > backup_mgr->io_size)
-                       ? backup_opt->fifo_size : backup_mgr->io_size;
+        /* the spool must hold at least one pipe-full (the capacity the kernel
+         * actually sets for fifo_size, not fifo_size itself) / one io_size chunk */
+        pipe_bytes = pipe_capacity_for (backup_opt->fifo_size);
+        min_disk_limit = (pipe_bytes > backup_mgr->io_size) ? pipe_bytes : backup_mgr->io_size;
 
         if (backup_opt->buffer_disk_limit < min_disk_limit)
         {
-            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_limit=%lld is below max(fifo_size, io_size)=%lld\n",
+            PRINT_LOG_ERR ("cubrid_backup.conf: buffer_disk_limit=%lld is below max(pipe capacity for fifo_size, io_size)=%lld\n",
                            backup_opt->buffer_disk_limit, min_disk_limit);
             goto error;
         }

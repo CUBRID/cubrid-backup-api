@@ -12,13 +12,11 @@
 # set_size_value/validate rules). Modes asserted via cubrid_backup.log lines:
 #   'tiered buffer summary'            -> buffering ran
 #   'log-phase boundary detected'      -> parser armed (2-mode)
-#   'reserve-smaller-than-pipe'        -> single-mode fallback (not asserted: init now rejects
-#                                         buffer_disk_limit < max(fifo_size, io_size); still reachable
-#                                         at begin when the kernel rounds the pipe size up past fifo_size)
-#   F_SETPIPE_SZ failure               -> not asserted: with buffer_memory_size>0 fails
-#                                         cubrid_backup_begin (ERROR 'cannot set the FIFO pipe size');
-#                                         with buffering off, WARNING '...; using the kernel pipe size'
-#                                         and continues
+#   'reserve-smaller-than-pipe'        -> single-mode fallback (not asserted: init rejects
+#                                         buffer_disk_limit < max(kernel pipe capacity for fifo_size,
+#                                         io_size); kept in the drain as a safety net only)
+#   F_SETPIPE_SZ failure               -> not asserted: WARNING '...; using the kernel pipe size'
+#                                         and the backup continues, with or without buffering
 set -u
 # ---- portable environment ----
 : "${CUBRID:?set CUBRID to the target CUBRID install, e.g. .../build_x86_64_release/_install/CUBRID}"
