@@ -32,6 +32,7 @@ testcases/restore_tc01
 testcases/restore_tc02
 testcases/restore_tc03
 testcases/parser_ut
+testcases/conf_ut
 
 # --- testcases: throwaway experimental cases (sources + binaries, untracked) ---
 testcases/backup_tc_*

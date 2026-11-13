@@ -12,8 +12,11 @@
 # set_size_value/validate rules). Modes asserted via cubrid_backup.log lines:
 #   'tiered buffer summary'            -> buffering ran
 #   'log-phase boundary detected'      -> parser armed (2-mode)
-#   'reserve-smaller-than-pipe'        -> single-mode fallback
-#   'F_SETPIPE_SZ failed'              -> pipe-size warn path
+#   'reserve-smaller-than-pipe'        -> single-mode fallback (not asserted: init rejects
+#                                         buffer_disk_limit < max(kernel pipe capacity for fifo_size,
+#                                         io_size); kept in the drain as a safety net only)
+#   F_SETPIPE_SZ failure               -> not asserted: WARNING '...; using the kernel pipe size'
+#                                         and the backup continues, with or without buffering
 set -u
 # ---- portable environment ----
 : "${CUBRID:?set CUBRID to the target CUBRID install, e.g. .../build_x86_64_release/_install/CUBRID}"
@@ -103,12 +106,13 @@ fail_case(){ local name=$1; local out=$W/bk/$name
 }
 has(){ grep -q "$1" $LOG; }
 
-R "=== A. fifo_size (conf clamp [64KB,1MB], INT_MAX reject) ==="
-wconf 1MB 256MB $W/spool false 1KB;   ok_case A0_fifo1KB_clampup
-has 'fifo_size below 64KB' && ok "A0 raise-to-64KB warn logged" || nok "A0 expected below-64KB warn"
+R "=== A. fifo_size (conf: <64KB reject, >pipe-max-size clamp, INT_MAX reject) ==="
+wconf 1MB 256MB $W/spool false 1KB;   fail_case A0_fifo1KB_below_min
 wconf 1MB 256MB $W/spool false 64KB;  ok_case A1_fifo64KB
 wconf 1MB 256MB $W/spool false 8MB;   ok_case A2_fifo8MB_clampdown
-has 'fifo_size above 1MB' && ok "A2 clamp-to-1MB warn logged" || nok "A2 expected above-1MB clamp warn"
+if [ "$PIPE_MAX" -lt 8388608 ]; then
+  has 'exceeds pipe-max-size' && ok "A2 clamp-to-pipe-max-size warn logged" || nok "A2 expected pipe-max-size clamp warn"
+fi
 wconf 1MB 256MB $W/spool false abc;   fail_case A3_fifo_garbage
 wconf 1MB 256MB $W/spool false -1;    fail_case A4_fifo_negative
 wconf 1MB 256MB $W/spool false 3GB;   fail_case A5_fifo_gt_intmax
@@ -125,8 +129,7 @@ wconf 16KB 256MB $W/spool false 1MB;  fail_case B5_mem_below_iosize
 R "=== C. buffer_disk_limit ==="
 wconf 1MB 0 $W/spool false 1MB;       ok_case C1_disk0_memonly
 has 'log-phase boundary detected' && nok "C1 parser armed without disk tier" || ok "C1 parser off (memory-only)"
-wconf 1MB 512KB $W/spool false 1MB;   ok_case C2_disk_lt_pipe
-has 'reserve-smaller-than-pipe' && ok "C2 single-mode fallback logged" || nok "C2 expected reserve-smaller-than-pipe"
+wconf 1MB 512KB $W/spool false 1MB;   fail_case C2_disk_lt_fifo
 wconf 1MB 256MB $W/spool false 1MB;   ok_case C3_disk256MB_baseline
 has 'log-phase boundary detected' && ok "C3 parser armed (2-mode)" || nok "C3 parser not armed"
 wconf 1MB -5 $W/spool false 1MB;      fail_case C4_disk_negative

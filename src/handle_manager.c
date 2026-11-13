@@ -30,6 +30,7 @@ int initialize_handle_manager (void)
     handle_mgr->backup_handle.disk_fd       = -1;
     handle_mgr->backup_handle.cancel_efd    = -1;
     handle_mgr->backup_handle.mem_buf       = NULL;
+    handle_mgr->backup_handle.scratch_buf   = NULL;
     handle_mgr->backup_handle.drain_started = false;
     handle_mgr->restore_handle.restore_fd   = -1;
 
@@ -107,10 +108,14 @@ int initialize_backup_handle (BACKUP_HANDLE* backup_handle)
     backup_handle->mem_tail = 0;
 
     backup_handle->disk_fd   = -1;
+    backup_handle->spool_path[0] = '\0';
     backup_handle->disk_cap  = 0;
     backup_handle->disk_len  = 0;
     backup_handle->disk_head = 0;
     backup_handle->disk_tail = 0;
+
+    backup_handle->scratch_buf = NULL;
+    backup_handle->scratch_cap = 0;
 
     backup_handle->producer_eof = false;
     backup_handle->buf_error    = false;
@@ -209,6 +214,12 @@ int finalize_backup_handle (BACKUP_HANDLE* backup_handle)
     if (backup_handle->mem_buf != NULL)
     {
         free (backup_handle->mem_buf);
+    }
+
+    /* drain scratch (malloc'd in begin_backup; the drain is joined above) */
+    if (backup_handle->scratch_buf != NULL)
+    {
+        free (backup_handle->scratch_buf);
     }
 
     /* free the parser's header-accumulation buffer (malloc'd in begin_backup) */

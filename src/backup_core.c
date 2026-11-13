@@ -517,11 +517,14 @@ int open_fifo (HANDLE_TYPE handle_type, void* handle)
         }
 
         /* Size the kernel pipe buffer on the read end before backupdb opens the
-         * write end. Best-effort: on failure keep the default size and continue. */
+         * write end. The size is a hint to the kernel, as tcp_sndbuf_size is in
+         * CUBRID: on failure warn and continue with the kernel pipe size (the
+         * drain sizes its scratch from F_GETPIPE_SZ, so buffering still works). */
         if (fcntl (backup_handle->fifo_fd, F_SETPIPE_SZ,
                    backup_mgr->default_backup_option.fifo_size) == -1)
         {
-            PRINT_LOG_WARN ("F_SETPIPE_SZ failed; using default pipe size\n");
+            PRINT_LOG_WARN ("cannot set the FIFO pipe size to fifo_size=%d (F_SETPIPE_SZ): %s; using the kernel pipe size\n",
+                            backup_mgr->default_backup_option.fifo_size, strerror (errno));
         }
     }
     else
@@ -1000,10 +1003,10 @@ error:
      * surfaces FAILURE instead of hanging. Parent thread only (not the fork
      * child: post-fork locks are unsafe there).
      *
-     * Do NOT gate this on buffering_enabled: begin_backup sets that flag only
-     * AFTER the (possibly slow) spool setup, so an early child failure reaches
-     * here while it is still false. Gating caused a permanent hang (reader parked
-     * on not_empty, drain on poll(), neither ever woken). The wakeup is safe
+     * Do NOT gate this on buffering_enabled: an earlier begin_backup set that
+     * flag only after the spool setup, so an early child failure could reach
+     * here while it was still false, and gating caused a permanent hang (reader
+     * parked on not_empty, drain on poll(), neither ever woken). The wakeup is safe
      * regardless of buffering: buf_lock/not_empty are initialized for the whole
      * handle lifetime, and the cancel_efd write is guarded by != -1. */
     if (backup_handle != NULL && backup_pid != 0)
@@ -1146,7 +1149,7 @@ int disk_ring_read (BACKUP_HANDLE* backup_handle, char* out, long long from_head
 }
 
 /* Reserve physical space for the spool so runtime pwrite never hits ENOSPC.
- * Returns 0 on success, -1 if space cannot be reserved (caller degrades). */
+ * Returns 0 on success, -1 if space cannot be reserved (caller fails begin). */
 static
 int reserve_spool_space (int fd, long long size)
 {
@@ -1185,13 +1188,14 @@ int reserve_spool_space (int fd, long long size)
 }
 
 /* Create the per-(db,level,pid) spool file, unlink-on-open by default, and
- * reserve its space. On success sets h->disk_fd and h->disk_cap. */
+ * reserve its space. On success sets h->disk_fd, h->disk_cap and h->spool_path.
+ * On failure no spool file is left. */
 static
 int create_spool_file (BACKUP_HANDLE* backup_handle)
 {
     BACKUP_OPTION* opt = &backup_mgr->default_backup_option;
 
-    char path[PATH_MAX];
+    char* path = backup_handle->spool_path;
     int  fd;
     int  flags = O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC;
 
@@ -1200,7 +1204,7 @@ int create_spool_file (BACKUP_HANDLE* backup_handle)
 
     if (IS_FAILURE (check_path_length_limit (path)))
     {
-        PRINT_LOG_WARN ("spool path too long\n");
+        PRINT_LOG_ERR ("spool path too long: buffer_disk_path=%s\n", opt->buffer_disk_path);
         goto error;
     }
 
@@ -1214,7 +1218,7 @@ int create_spool_file (BACKUP_HANDLE* backup_handle)
 
     if (fd == -1)
     {
-        PRINT_LOG_WARN ("spool open failed\n");
+        PRINT_LOG_ERR ("cannot open spool file %s: %s\n", path, strerror (errno));
         goto error;
     }
 
@@ -1225,7 +1229,15 @@ int create_spool_file (BACKUP_HANDLE* backup_handle)
 
     if (reserve_spool_space (fd, opt->buffer_disk_limit) != 0)
     {
+        PRINT_LOG_ERR ("cannot reserve buffer_disk_limit=%lld bytes for spool file %s: %s\n",
+                       opt->buffer_disk_limit, path, strerror (errno));
         close (fd);
+
+        /* keep_spool did not unlink it above; a failed begin leaves no spool */
+        if (opt->buffer_disk_keep_spool == true)
+        {
+            unlink (path);
+        }
         goto error;
     }
 
@@ -1584,37 +1596,11 @@ void* drain_backup_fifo (void* arg)
     sigaddset (&block_set, SIGCHLD);
     pthread_sigmask (SIG_BLOCK, &block_set, NULL);
 
-    /* disk-tier scratch. Sized to the LARGER of io_size and the kernel pipe
-     * capacity, so a single boundary "probe" read can span the whole pipe
-     * backlog and always capture the log-phase FILE_START that backupdb has
-     * committed while blocked under LOG_CS. */
+    /* disk-tier scratch: allocated and sized in setup_tiered_buffer () before
+     * this thread starts (owned by the handle, freed in finalize). */
     io_size     = (size_t) backup_mgr->io_size;
-    scratch_cap = io_size;
-    {
-        int pipe_cap = fcntl (backup_handle->fifo_fd, F_GETPIPE_SZ);
-        long long desired_cap = (pipe_cap > 0)
-                         ? (long long) pipe_cap
-                         : (long long) backup_mgr->default_backup_option.fifo_size;
-        if (desired_cap > (long long) scratch_cap)
-        {
-            scratch_cap = (size_t) desired_cap;
-        }
-    }
-    if (backup_handle->disk_cap > 0)
-    {
-        scratch_buf = malloc (scratch_cap);
-        if (scratch_buf == NULL)
-        {
-            /* Degrade to memory-only instead of failing the whole backup. The
-             * scratch is only used for disk staging + the boundary probe, both
-             * gated on disk_cap; zeroing it makes probe_ok false below, which
-             * disables the parser via the existing guard. */
-            PRINT_LOG_WARN ("drain scratch alloc failed; disk tier disabled (memory-only)\n");
-            pthread_mutex_lock (&backup_handle->buf_lock);
-            backup_handle->disk_cap = 0;
-            pthread_mutex_unlock (&backup_handle->buf_lock);
-        }
-    }
+    scratch_buf = backup_handle->scratch_buf;
+    scratch_cap = backup_handle->scratch_cap;
 
     /* The probe commits its (possibly pipe-sized) chunk to the reserved spool in
      * one shot, so it is only usable when the reserve can hold it. This is a
@@ -1922,8 +1908,6 @@ void* drain_backup_fifo (void* arg)
         }
     }
 
-    free (scratch_buf);
-
     /* final wake so a parked reader observes producer_eof/buf_error/stop */
     pthread_mutex_lock (&backup_handle->buf_lock);
     pthread_cond_broadcast (&backup_handle->not_empty);
@@ -2008,6 +1992,122 @@ int pop_backup_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int bu
     return SUCCESS;
 }
 
+/* Secure every tiered-buffer resource and start the drain thread. Called by
+ * begin_backup () BEFORE backupdb is launched, so a configured resource that
+ * cannot be secured fails begin (no child process exists yet) instead of
+ * silently degrading the buffer. On failure the resources acquired so far stay
+ * recorded in the handle and are released by free_handle (). */
+static
+int setup_tiered_buffer (BACKUP_HANDLE* backup_handle)
+{
+    BACKUP_OPTION* opt = &backup_mgr->default_backup_option;
+
+    sigset_t block_set, old_set;
+    int pipe_cap;
+    int rc;
+
+    backup_handle->mem_cap = (size_t) opt->buffer_memory_size;
+    backup_handle->mem_buf = malloc (backup_handle->mem_cap);
+
+    if (backup_handle->mem_buf == NULL)
+    {
+        PRINT_LOG_ERR ("cannot allocate buffer_memory_size=%lld bytes: %s\n",
+                       opt->buffer_memory_size, strerror (errno));
+        backup_handle->mem_cap = 0;
+        goto error;
+    }
+
+    backup_handle->cancel_efd = eventfd (0, EFD_NONBLOCK | EFD_CLOEXEC);
+
+    if (backup_handle->cancel_efd == -1)
+    {
+        PRINT_LOG_ERR ("cannot create the drain cancel eventfd: %s\n", strerror (errno));
+        goto error;
+    }
+
+    /* Drain scratch size: the LARGER of io_size and the kernel pipe capacity,
+     * so a single boundary "probe" read can span the whole pipe backlog and
+     * always capture the log-phase FILE_START that backupdb has committed while
+     * blocked under LOG_CS. */
+    backup_handle->scratch_cap = (size_t) backup_mgr->io_size;
+    pipe_cap = fcntl (backup_handle->fifo_fd, F_GETPIPE_SZ);
+    if (pipe_cap <= 0)
+    {
+        pipe_cap = opt->fifo_size;
+    }
+    if ((size_t) pipe_cap > backup_handle->scratch_cap)
+    {
+        backup_handle->scratch_cap = (size_t) pipe_cap;
+    }
+
+    /* optional disk tier: everything it needs is secured BEFORE the drain
+     * starts (the drain reads disk_fd, scratch_buf and parser state). */
+    if (opt->buffer_disk_limit > 0)
+    {
+        backup_handle->scratch_buf = malloc (backup_handle->scratch_cap);
+
+        if (backup_handle->scratch_buf == NULL)
+        {
+            PRINT_LOG_ERR ("cannot allocate the %zu-byte drain scratch buffer: %s\n",
+                           backup_handle->scratch_cap, strerror (errno));
+            goto error;
+        }
+
+        /* Arm the observational log-phase parser (only with a disk reserve;
+         * memory-only has nothing to reserve, so the parser would be inert). */
+        backup_handle->parser.global_header = malloc ((size_t) CUB_BK_HEADER_STRUCT);
+
+        if (backup_handle->parser.global_header == NULL)
+        {
+            PRINT_LOG_ERR ("cannot allocate the %d-byte log-phase parser header buffer: %s\n",
+                           (int) CUB_BK_HEADER_STRUCT, strerror (errno));
+            goto error;
+        }
+
+        backup_handle->parser.state            = PS_GATE;
+        backup_handle->parser.need_bytes       = (size_t) CUB_BK_HEADER_STRUCT;
+        backup_handle->parser.got_bytes        = 0;
+        backup_handle->parser.skip_bytes       = 0;
+        backup_handle->parser.saw_data_volume  = 0;
+        backup_handle->parser.backup_page_size = 0;
+        backup_handle->parser.compressed       = 0;
+        backup_handle->parser_on               = true;
+
+        /* spool last: with keep_spool the file persists on disk until
+         * begin_backup's error path removes it, so secure it after the rest. */
+        if (IS_FAILURE (create_spool_file (backup_handle)))
+        {
+            goto error;
+        }
+    }
+
+    /* start the drain with SIGCHLD blocked so it never steals the child-exit
+     * signal from backup_thread's sigtimedwait(). */
+    sigemptyset (&block_set);
+    sigaddset (&block_set, SIGCHLD);
+    pthread_sigmask (SIG_BLOCK, &block_set, &old_set);
+
+    rc = pthread_create (&backup_handle->drain_thread, NULL,
+                         drain_backup_fifo, (void *)backup_handle);
+
+    pthread_sigmask (SIG_SETMASK, &old_set, NULL);
+
+    if (IS_FAILURE (rc))
+    {
+        PRINT_LOG_ERR ("cannot create the drain thread: %s\n", strerror (rc));
+        goto error;
+    }
+
+    backup_handle->drain_started     = true;
+    backup_handle->buffering_enabled = true;
+
+    return SUCCESS;
+
+error:
+
+    return FAILURE;
+}
+
 int begin_backup (CUBRID_BACKUP_INFO* backup_info, void** handle)
 {
     BACKUP_HANDLE* backup_handle;
@@ -2040,6 +2140,19 @@ int begin_backup (CUBRID_BACKUP_INFO* backup_info, void** handle)
         goto error;
     }
 
+    /* Tiered buffer: secure every configured resource and start the drain
+     * BEFORE launching backupdb, so a failure here fails begin with no child
+     * process to cancel. state stays 1: free_handle joins the drain (if any)
+     * and releases the FIFO, spool, eventfd and buffers. */
+    if (backup_mgr->default_backup_option.buffer_memory_size > 0)
+    {
+        if (IS_FAILURE (setup_tiered_buffer (backup_handle)))
+        {
+            PRINT_LOG_ERR (ERR_INFO);
+            goto error;
+        }
+    }
+
     set_thread_state (BACKUP_HANDLE_TYPE, backup_handle, THREAD_STATE_RUNNING);
 
     if (IS_FAILURE (pthread_create (&backup_handle->backup_thread, NULL, execute_backup, (void *)backup_handle)))
@@ -2058,113 +2171,6 @@ int begin_backup (CUBRID_BACKUP_INFO* backup_info, void** handle)
 
     /* A joinable thread now exists: record it so teardown always joins it. */
     backup_handle->backup_thread_started = true;
-
-    /* ── tiered buffer setup (best-effort: on any failure degrade to the legacy
-     * direct-FIFO read path via buffering_enabled=false — never fail begin) ── */
-    if (backup_mgr->default_backup_option.buffer_memory_size > 0)
-    {
-        backup_handle->mem_cap = (size_t) backup_mgr->default_backup_option.buffer_memory_size;
-        backup_handle->mem_buf = malloc (backup_handle->mem_cap);
-
-        if (backup_handle->mem_buf == NULL)
-        {
-            PRINT_LOG_WARN ("buffer_memory_size alloc failed; buffering disabled\n");
-            backup_handle->mem_cap = 0;
-        }
-        else
-        {
-            backup_handle->cancel_efd = eventfd (0, EFD_NONBLOCK | EFD_CLOEXEC);
-
-            if (backup_handle->cancel_efd == -1)
-            {
-                PRINT_LOG_WARN ("eventfd failed; buffering disabled\n");
-                free (backup_handle->mem_buf);
-                backup_handle->mem_buf = NULL;
-                backup_handle->mem_cap = 0;
-            }
-            else
-            {
-                sigset_t block_set, old_set;
-                int rc;
-
-                /* optional disk tier: create + reserve the spool BEFORE the drain
-                 * starts (the drain writes disk_fd). Failure degrades to memory-only
-                 * — it never fails begin. */
-                if (backup_mgr->default_backup_option.buffer_disk_limit > 0)
-                {
-                    if (IS_FAILURE (create_spool_file (backup_handle)))
-                    {
-                        PRINT_LOG_WARN ("spool setup failed; disk tier disabled (memory-only)\n");
-                        backup_handle->disk_fd  = -1;
-                        backup_handle->disk_cap = 0;
-                    }
-                }
-
-                /* Arm the observational log-phase parser — only when a disk reserve
-                 * exists (memory-only has nothing to reserve, so the parser would be
-                 * inert). MUST be set up BEFORE the drain thread starts, since the
-                 * drain reads parser state. Alloc failure degrades to single-mode. */
-                if (backup_handle->disk_cap > 0)
-                {
-                    backup_handle->parser.global_header = malloc ((size_t) CUB_BK_HEADER_STRUCT);
-
-                    if (backup_handle->parser.global_header == NULL)
-                    {
-                        PRINT_LOG_WARN ("parser header alloc failed; log-phase detection disabled\n");
-                        backup_handle->parser.state = PS_DISABLED;
-                        backup_handle->parser_on = false;
-                    }
-                    else
-                    {
-                        backup_handle->parser.state            = PS_GATE;
-                        backup_handle->parser.need_bytes       = (size_t) CUB_BK_HEADER_STRUCT;
-                        backup_handle->parser.got_bytes        = 0;
-                        backup_handle->parser.skip_bytes       = 0;
-                        backup_handle->parser.saw_data_volume  = 0;
-                        backup_handle->parser.backup_page_size = 0;
-                        backup_handle->parser.compressed       = 0;
-                        backup_handle->parser_on               = true;
-                    }
-                }
-
-                /* start the drain with SIGCHLD blocked so it never steals the
-                 * child-exit signal from backup_thread's sigtimedwait(). */
-                sigemptyset (&block_set);
-                sigaddset (&block_set, SIGCHLD);
-                pthread_sigmask (SIG_BLOCK, &block_set, &old_set);
-
-                rc = pthread_create (&backup_handle->drain_thread, NULL,
-                                     drain_backup_fifo, (void *)backup_handle);
-
-                pthread_sigmask (SIG_SETMASK, &old_set, NULL);
-
-                if (IS_FAILURE (rc))
-                {
-                    PRINT_LOG_WARN ("drain thread create failed; buffering disabled\n");
-                    close (backup_handle->cancel_efd);
-                    backup_handle->cancel_efd = -1;
-                    free (backup_handle->mem_buf);
-                    backup_handle->mem_buf = NULL;
-                    backup_handle->mem_cap = 0;
-
-                    /* no drain to run the parser; drop its buffer now (finalize
-                     * also guards this) and disable it. */
-                    if (backup_handle->parser.global_header != NULL)
-                    {
-                        free (backup_handle->parser.global_header);
-                        backup_handle->parser.global_header = NULL;
-                    }
-                    backup_handle->parser.state = PS_DISABLED;
-                    backup_handle->parser_on = false;
-                }
-                else
-                {
-                    backup_handle->drain_started     = true;
-                    backup_handle->buffering_enabled = true;
-                }
-            }
-        }
-    }
 
     if (IS_FAILURE (pthread_mutex_unlock (&backup_handle->backup_mutex)))
     {
@@ -2186,6 +2192,14 @@ error:
             backup_handle->backup_thread_started = false;
             close_fifo (BACKUP_HANDLE_TYPE, backup_handle);
         case 1:
+            /* a kept spool (keep_spool) was never unlinked; a failed begin
+             * leaves no spool file behind */
+            if (backup_handle->disk_fd != -1
+                && backup_mgr->default_backup_option.buffer_disk_keep_spool == true)
+            {
+                unlink (backup_handle->spool_path);
+            }
+
             free_handle (BACKUP_HANDLE_TYPE, backup_handle);
         default:
             break;
@@ -2380,7 +2394,7 @@ int read_data (BACKUP_HANDLE* backup_handle, char* buffer, unsigned int buffer_s
     int i;
 
     /* buffering active: pop from the tiered buffer instead of the FIFO directly.
-     * When disabled (conf =0, or begin-time degrade) the legacy path below runs. */
+     * When disabled (buffer_memory_size=0) the legacy path below runs. */
     if (backup_handle->buffering_enabled)
     {
         return pop_backup_data (backup_handle, buffer, buffer_size, data_len, is_backup_end);

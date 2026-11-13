@@ -55,7 +55,7 @@ Each suite backs up the target's `cubrid_backup.conf` / `cubrid.conf` on entry a
 | Suite | What it verifies | Args | Scale |
 |---|---|---|---|
 | `s01_param_sweep.sh` | Config sweep: every `fifo_size` / `buffer_memory_size` / `buffer_disk_limit` / `buffer_disk_path` / `buffer_disk_keep_spool` value — valid ones complete + restore-match + log the expected mode, invalid ones are rejected fail-fast. | — | small |
-| `s02_error_inject.sh` | Error / abnormal paths: bad spool path rejected at init, mid-run disk-reservation failure degrades to memory-only + still completes, backup-handle reuse, server down at start, client killed mid-stream. | — | small–med |
+| `s02_error_inject.sh` | Error / abnormal paths: bad spool path rejected at init, runtime disk-reservation failure fails `cubrid_backup_begin` and leaves no spool file, backup-handle reuse, server down at start, client killed mid-stream. | — | small–med |
 | `s03_level_error.sh` | Kill `backupdb` / kill server / undersized spool at backup **levels 1 & 2**, plus a minimum-ring (`mem = io_size`) + stalled-during-data-phase consumer to torture the probe/carry path. | — | med |
 | `s04_levels_30g.sh` | Per-level accuracy at ~30 GB with checkpoint/cleanup disabled (full log streaming): levels 0/1/2 each restore to a full sorted-dump `sha256` that matches the source. | — | **~30 GB** |
 | `s05_150g.sh` | 150 GB uncompressed — the buffer actually carries ~150 GB — verified with an aggregate fingerprint (count/min/max) + a 1-in-1000 sampled sorted hash + restoredb page checksums. | — | **~150 GB** |

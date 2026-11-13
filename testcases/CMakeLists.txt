@@ -56,3 +56,14 @@ target_compile_definitions(parser_ut PRIVATE _GNU_SOURCE)
 set_target_properties(parser_ut PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
 target_link_libraries(parser_ut pthread)
 add_test(NAME parser_ut COMMAND parser_ut)
+
+# ── deterministic unit tests for cubrid_backup.conf parsing/validation ──
+# conf_ut.c #includes ../src/backup_manager.c to reach its static parsers; it
+# needs no other TU and no server. Runs in a private $CUBRID under $TMPDIR.
+#   gcc -std=gnu11 -D_GNU_SOURCE -I ../src/include conf_ut.c -lpthread
+add_executable(conf_ut conf_ut.c)
+target_include_directories(conf_ut PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src/include)
+target_compile_definitions(conf_ut PRIVATE _GNU_SOURCE)
+set_target_properties(conf_ut PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+target_link_libraries(conf_ut pthread)
+add_test(NAME conf_ut COMMAND conf_ut)

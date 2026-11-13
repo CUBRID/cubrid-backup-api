@@ -42,7 +42,7 @@ struct backup_option
     bool except_active_log;
     int sleep_msecs;
 
-    int       fifo_size;              /* bytes, default 64KB, clamped <= 1MB */
+    int       fifo_size;              /* bytes, [64KB, max(64KB, pipe-max-size)] */
     long long buffer_memory_size;     /* bytes, 0 = buffering disabled       */
     long long buffer_disk_limit;      /* bytes, 0 = no disk tier             */
     char      buffer_disk_path[PATH_MAX];
